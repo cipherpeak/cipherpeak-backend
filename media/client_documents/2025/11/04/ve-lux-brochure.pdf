@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script type="module">import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {};
+window.$RefreshSig$ = () => (type) => type;</script>
+
+    <script type="module" src="/@vite/client"></script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VE LUX - Luxury Car Detailing Excellence</title>
+    <meta name="description" content="Global leader in premium car detailing. Precision. Trust. Perfection for your luxury vehicle." />
+    <meta name="author" content="VE LUX" />
+    <link rel="icon" type="image/svg+xml" href="/logo-07.png" />
+
+    <meta property="og:title" content="VE LUX - Luxury Car Detailing Excellence" />
+    <meta property="og:description" content="Global leader in premium car detailing. Precision. Trust. Perfection for your luxury vehicle." />
+    <meta property="og:type" content="website" />
+    <!-- <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" /> -->
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@velux_detailing" />
+    <!-- <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" /> -->
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fahkwang:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+
+    
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx?t=1761732076575"></script>
+  </body>
+</html>
