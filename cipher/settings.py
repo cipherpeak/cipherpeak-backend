@@ -115,7 +115,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'cipherpeak',
         'USER': 'postgres',
-        'PASSWORD': 12345,
+        'PASSWORD': 'krishna*1',
         'HOST': 'localhost',
         'PORT': '5432',
     }
