@@ -2,6 +2,51 @@ from rest_framework import serializers
 from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory
 from django.contrib.auth import authenticate
 
+
+
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
+
+    def validate(self, data):
+        username = data.get('username')
+        password = data.get('password')
+        
+        if username and password:
+            user = authenticate(username=username, password=password)
+            if user:
+                if user.is_active:
+                    data['user'] = user
+                else:
+                    raise serializers.ValidationError('User account is disabled.')
+            else:
+                raise serializers.ValidationError('Unable to log in with provided credentials.')
+        else:
+            raise serializers.ValidationError('Must include username and password.')
+        return data
+    
+
+
+
+
+# class EmployeeDocumentSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = EmployeeMedia
+#         fields = ['media_type', 'file']
+#         read_only_fields = ['user', 'uploaded_at']
+    
+#     def validate_media_type(self, value):
+#         valid_types = [choice[0] for choice in EmployeeMedia.MEDIA_TYPES]
+#         if value not in valid_types:
+#             raise serializers.ValidationError(
+#                 f"Invalid media type. Choose from: {', '.join(valid_types)}"
+#             )
+#         return value
+ 
+
+    
+
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
     
@@ -128,6 +173,7 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate_username(self, value):
+        
         if len(value) < 3:
             raise serializers.ValidationError("Username must be at least 3 characters long.")
         return value
@@ -168,7 +214,6 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
 # Update your existing UserSerializer
 class UserSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()  # Add this field
-    
     class Meta:
         model = CustomUser
         fields = [
@@ -192,26 +237,7 @@ class UserSerializer(serializers.ModelSerializer):
             return obj.profile_image.url
         return None
 
-class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField()
 
-    def validate(self, data):
-        username = data.get('username')
-        password = data.get('password')
-        
-        if username and password:
-            user = authenticate(username=username, password=password)
-            if user:
-                if user.is_active:
-                    data['user'] = user
-                else:
-                    raise serializers.ValidationError('User account is disabled.')
-            else:
-                raise serializers.ValidationError('Unable to log in with provided credentials.')
-        else:
-            raise serializers.ValidationError('Must include username and password.')
-        return data
 
 # Optional: Add a dedicated serializer for profile image updates
 class ProfileImageUpdateSerializer(serializers.ModelSerializer):

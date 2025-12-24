@@ -12,25 +12,27 @@ from .serializers import (
     UserSerializer, 
     LoginSerializer, 
     EmployeeDetailSerializer,
-    EmployeeDocumentSerializer,
+    EmployeeDocumentSerializer, 
     EmployeeMediaSerializer,
     LeaveRecordSerializer,
     SalaryHistorySerializer
 )
-
-@api_view(['POST'])
+from rest_framework.views import APIView
+# login view 
+@api_view(['POST']) 
 def login_view(request):
     serializer = LoginSerializer(data=request.data)
-    if serializer.is_valid():
+    if serializer.is_valid(): 
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
         
         return Response({
-            'user': UserSerializer(user).data,
+            'user': user.role,
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         })
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -38,13 +40,15 @@ def user_profile(request):
     serializer = UserSerializer(request.user)
     return Response(serializer.data)
 
+
+# Employee listing view
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def employee_list(request):
     """
     Get list of all employees (non-superusers) with basic details
     """
-    employees = CustomUser.objects.filter(is_superuser=False).select_related()
+    employees = CustomUser.objects.filter(is_superuser=False,is_active=True).select_related()
     
     # Optional query parameters for filtering
     role = request.GET.get('role')
@@ -64,6 +68,9 @@ def employee_list(request):
         'employees': serializer.data
     })
 
+
+
+#Employee detail_view
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def employee_detail(request, employee_id):
@@ -71,6 +78,7 @@ def employee_detail(request, employee_id):
     Get full details of a specific employee by ID or username
     """
     try:
+       
         # Try to get by ID first, then by username
         if employee_id.isdigit():
             employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
@@ -84,30 +92,17 @@ def employee_detail(request, employee_id):
     
     # Prefetch related data for better performance
     employee = CustomUser.objects.filter(id=employee.id).prefetch_related(
+
         Prefetch('documents', queryset=EmployeeDocument.objects.all()),
         Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
         Prefetch('leave_records', queryset=LeaveRecord.objects.all().order_by('-start_date')),
         Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-effective_from'))
     ).first()
     
-    serializer = EmployeeDetailSerializer(employee)
+    serializer = EmployeeDetailSerializer(employee,context={'request':request})
+    
     return Response(serializer.data)
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def current_employee_full_details(request):
-    """
-    Get full details of the currently authenticated employee
-    """
-    employee = CustomUser.objects.filter(id=request.user.id).prefetch_related(
-        Prefetch('documents', queryset=EmployeeDocument.objects.all()),
-        Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
-        Prefetch('leave_records', queryset=LeaveRecord.objects.all().order_by('-start_date')),
-        Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-effective_from'))
-    ).first()
-    
-    serializer = EmployeeDetailSerializer(employee)
-    return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -129,7 +124,7 @@ def employee_documents(request, employee_id=None):
         # Regular users can only view their own documents
         documents = request.user.documents.all()
     
-    serializer = EmployeeDocumentSerializer(documents, many=True)
+    serializer = EmployeeCreateDocumentSerializer(documents, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -156,13 +151,92 @@ def employee_media(request, employee_id=None):
     return Response(serializer.data)
 
 
-
-
-
-
-
-
-
+class EmployeeDocumentListCreateView(APIView):
+    """
+    API endpoint for listing and creating employee documents
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get(self, request):
+        """
+        Get all documents for the authenticated user
+        """
+        documents = EmployeeDocument.objects.filter(user=request.user)
+        serializer = EmployeeDocumentSerializer(documents, many=True, context={'request': request})
+        
+        return Response({
+            'status': 'success',
+            'count': documents.count(),
+            'documents': serializer.data
+        })
+    
+    def post(self, request):
+        """
+        Create a new document for the authenticated user
+        """
+        # Add user to request data
+        data = request.data.copy()
+        
+        serializer = EmployeeDocumentSerializer(data=data, context={'request': request})
+        
+        if serializer.is_valid():
+            # Save with current user
+            document = serializer.save(user=request.user)
+            
+            return Response({
+                'status': 'success',
+                'message': 'Document uploaded successfully',
+                'document': EmployeeDocumentSerializer(document, context={'request': request}).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'status': 'error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+class EmployeeMediaListCreateView(APIView):
+    """
+    API endpoint for listing and creating employee media files
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get(self, request):
+        """
+        Get all media files for the authenticated user
+        """
+        media_files = EmployeeMedia.objects.filter(user=request.user)
+        serializer = EmployeeMediaSerializer(media_files, many=True, context={'request': request})
+        
+        return Response({
+            'status': 'success',
+            'count': media_files.count(),
+            'media_files': serializer.data
+        })
+    
+    def post(self, request):
+        """
+        Create a new media file for the authenticated user
+        """
+        # Add user to request data
+        data = request.data.copy()
+        
+        serializer = EmployeeMediaSerializer(data=data, context={'request': request})
+        
+        if serializer.is_valid():
+            # Save with current user
+            media = serializer.save(user=request.user)
+            
+            return Response({
+                'status': 'success',
+                'message': 'Media file uploaded successfully',
+                'media': EmployeeMediaSerializer(media, context={'request': request}).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'status': 'error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -311,6 +385,9 @@ def update_employee(request, employee_id):
                         {'error': 'Username already exists'}, 
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                
+           
+                
             
             if 'email' in request.data:
                 new_email = request.data['email']
@@ -322,6 +399,11 @@ def update_employee(request, employee_id):
             
             # Save the serializer (this will handle the profile_image)
             serializer.save()
+            
+            employee.refresh_from_db()
+
+            
+
             
             response_serializer = UserSerializer(employee, context={'request': request})
             return Response(
@@ -337,6 +419,7 @@ def update_employee(request, employee_id):
                 {'error': 'Invalid data', 'details': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
             
     except Exception as e:
         print(f"Server error in update_employee: {str(e)}")
@@ -345,9 +428,12 @@ def update_employee(request, employee_id):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
+    
+    
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_employee(request, employee_id):
+    print("Delete employee called for ID:", employee_id)
     """
     Delete an employee
     """
@@ -374,7 +460,10 @@ def delete_employee(request, employee_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        employee.delete()
+       
+        employee.is_active = False
+        employee.save()
+        
         
         return Response(
             {'message': 'Employee deleted successfully'},
@@ -386,4 +475,26 @@ def delete_employee(request, employee_id):
             {'error': f'Server error: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+
+
+
+
+
+# @api_view(['GET'])
+# @permission_classes([IsAuthenticated])
+# def current_employee_full_details(request):
+#     """
+#     Get full details of the currently authenticated employee
+#     """
+#     employee = CustomUser.objects.filter(id=request.user.id).prefetch_related(
+#         Prefetch('documents', queryset=EmployeeDocument.objects.all()),
+#         Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
+#         Prefetch('leave_records', queryset=LeaveRecord.objects.all().order_by('-start_date')),
+#         Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-effective_from'))
+#     ).first()
+    
+#     serializer = EmployeeDetailSerializer(employee)
+#     return Response(serializer.data)
 

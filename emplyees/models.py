@@ -120,7 +120,7 @@ class EmployeeDocument(models.Model):
         upload_to='employee_documents/%Y/%m/%d/',
         max_length=500
     )
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200,blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
