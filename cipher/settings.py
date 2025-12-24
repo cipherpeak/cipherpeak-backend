@@ -77,7 +77,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8081"
 ]
 
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = True   
 
 from datetime import timedelta
 
@@ -87,8 +87,7 @@ SIMPLE_JWT = {
      'ROTATE_REFRESH_TOKENS': True,
      'BLACKLIST_AFTER_ROTATION': True
 }
-
-
+ 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

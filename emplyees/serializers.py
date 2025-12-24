@@ -30,38 +30,38 @@ class LoginSerializer(serializers.Serializer):
 
 
 
-class EmployeeDocumentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = EmployeeMedia
-        fields = ['media_type', 'file']
-        read_only_fields = ['user', 'uploaded_at']
+# class EmployeeDocumentSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = EmployeeMedia
+#         fields = ['media_type', 'file']
+#         read_only_fields = ['user', 'uploaded_at']
     
-    def validate_media_type(self, value):
-        valid_types = [choice[0] for choice in EmployeeMedia.MEDIA_TYPES]
-        if value not in valid_types:
-            raise serializers.ValidationError(
-                f"Invalid media type. Choose from: {', '.join(valid_types)}"
-            )
-        return value
+#     def validate_media_type(self, value):
+#         valid_types = [choice[0] for choice in EmployeeMedia.MEDIA_TYPES]
+#         if value not in valid_types:
+#             raise serializers.ValidationError(
+#                 f"Invalid media type. Choose from: {', '.join(valid_types)}"
+#             )
+#         return value
  
 
     
 
-# class EmployeeDocumentSerializer(serializers.ModelSerializer):
-#     file_url = serializers.SerializerMethodField()
+class EmployeeDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
     
-#     class Meta:
-#         model = EmployeeDocument
-#         fields = [
-#             'id', 'document_type', 'title', 'description', 
-#             'file', 'file_url', 'uploaded_at', 'is_verified'
-#         ]
-#         read_only_fields = ['uploaded_at']
+    class Meta:
+        model = EmployeeDocument
+        fields = [
+            'id', 'document_type', 'title', 'description', 
+            'file', 'file_url', 'uploaded_at', 'is_verified'
+        ]
+        read_only_fields = ['uploaded_at']
     
-#     def get_file_url(self, obj):
-#         if obj.file:
-#             return obj.file.url
-#         return None
+    def get_file_url(self, obj):
+        if obj.file:
+            return obj.file.url
+        return None
 
 class EmployeeMediaSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()

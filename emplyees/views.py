@@ -12,11 +12,12 @@ from .serializers import (
     UserSerializer, 
     LoginSerializer, 
     EmployeeDetailSerializer,
-    
+    EmployeeDocumentSerializer, 
     EmployeeMediaSerializer,
     LeaveRecordSerializer,
     SalaryHistorySerializer
 )
+from rest_framework.views import APIView
 # login view 
 @api_view(['POST']) 
 def login_view(request):
@@ -150,24 +151,34 @@ def employee_media(request, employee_id=None):
     return Response(serializer.data)
 
 
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from .models import EmployeeMedia
-from .serializers import EmployeeDocumentSerializer  
-
-class EmployeeDocumentCreateView(APIView):
+class EmployeeDocumentListCreateView(APIView):
+    """
+    API endpoint for listing and creating employee documents
+    """
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     
+    def get(self, request):
+        """
+        Get all documents for the authenticated user
+        """
+        documents = EmployeeDocument.objects.filter(user=request.user)
+        serializer = EmployeeDocumentSerializer(documents, many=True, context={'request': request})
+        
+        return Response({
+            'status': 'success',
+            'count': documents.count(),
+            'documents': serializer.data
+        })
+    
     def post(self, request):
-        print(request.data,"this is request data")
-        # Add user to data
+        """
+        Create a new document for the authenticated user
+        """
+        # Add user to request data
         data = request.data.copy()
         
-        # Create serializer with data
-        serializer = EmployeeDocumentSerializer(data=data)
+        serializer = EmployeeDocumentSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
             # Save with current user
@@ -176,28 +187,56 @@ class EmployeeDocumentCreateView(APIView):
             return Response({
                 'status': 'success',
                 'message': 'Document uploaded successfully',
-                'document': {
-                    'id': document.id,
-                    'title': document.title,
-                    'media_type': document.media_type,
-                    'media_type_display': document.get_media_type_display(),
-                    'file_url': request.build_absolute_uri(document.file.url),
-                    'uploaded_at': document.uploaded_at
-                }
+                'document': EmployeeDocumentSerializer(document, context={'request': request}).data
             }, status=status.HTTP_201_CREATED)
         
         return Response({
             'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+class EmployeeMediaListCreateView(APIView):
+    """
+    API endpoint for listing and creating employee media files
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
     
-
-
-
-
-
-
-
+    def get(self, request):
+        """
+        Get all media files for the authenticated user
+        """
+        media_files = EmployeeMedia.objects.filter(user=request.user)
+        serializer = EmployeeMediaSerializer(media_files, many=True, context={'request': request})
+        
+        return Response({
+            'status': 'success',
+            'count': media_files.count(),
+            'media_files': serializer.data
+        })
+    
+    def post(self, request):
+        """
+        Create a new media file for the authenticated user
+        """
+        # Add user to request data
+        data = request.data.copy()
+        
+        serializer = EmployeeMediaSerializer(data=data, context={'request': request})
+        
+        if serializer.is_valid():
+            # Save with current user
+            media = serializer.save(user=request.user)
+            
+            return Response({
+                'status': 'success',
+                'message': 'Media file uploaded successfully',
+                'media': EmployeeMediaSerializer(media, context={'request': request}).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'status': 'error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -361,6 +400,10 @@ def update_employee(request, employee_id):
             # Save the serializer (this will handle the profile_image)
             serializer.save()
             
+            employee.refresh_from_db()
+
+            
+
             
             response_serializer = UserSerializer(employee, context={'request': request})
             return Response(

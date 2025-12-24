@@ -10,9 +10,8 @@ urlpatterns = [
     #Employee Creation
     path('employees/create/', views.create_employee, name='create_employee'),
 
-    # create document 
-    path('employees/upload_document/', views.EmployeeDocumentCreateView.as_view(), name='upload_document'),
-
+    path('employees/upload_document/', views.EmployeeDocumentListCreateView.as_view(), name='upload_document'),
+    path('employees/upload_media/', views.EmployeeMediaListCreateView.as_view(), name='upload_media'),
     # update employee details
     path('employees/<int:employee_id>/update/', views.update_employee, name='update_employee'),
 
@@ -27,7 +26,7 @@ urlpatterns = [
     #employee detail url
     path('employees/<str:employee_id>/', views.employee_detail, name='employee_detail'),
     
-
+    
     # path('documents/', views.employee_documents, name='employee_documents'),
     # path('documents/<int:employee_id>/', views.employee_documents, name='employee_documents_by_id'),
     # path('media/', views.employee_media, name='employee_media'),
