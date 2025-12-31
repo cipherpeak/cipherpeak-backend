@@ -21,8 +21,12 @@ class AssigneeSerializer(serializers.ModelSerializer):
             'designation',
             'department',
             'employee_id',
-            'phone_number'
+            'phone_number',
+            
+            
+
         ]
+       
     
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
@@ -57,9 +61,10 @@ class TaskSerializer(serializers.ModelSerializer):
             'created_by', 
             'created_by_details', 
             'created_at',
-            'updated_at'
+            'updated_at','is_deleted',
+            'deleted_at',
         ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at', 'completed_at']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'completed_at', 'is_deleted', 'deleted_at']
 
 class TaskCreateSerializer(serializers.ModelSerializer):
     class Meta:

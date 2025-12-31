@@ -89,7 +89,7 @@ class CustomUser(AbstractUser):
     employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     department = models.CharField(max_length=100, blank=True, null=True)
     designation = models.CharField(max_length=100, blank=True, null=True)
-    
+
     def __str__(self):
         return f"{self.username} - {self.get_role_display()}"
 
@@ -149,7 +149,7 @@ class EmployeeMedia(models.Model):
         upload_to='employee_media/%Y/%m/%d/',
         max_length=500
     )
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200,blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     
