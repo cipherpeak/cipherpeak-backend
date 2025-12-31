@@ -201,7 +201,10 @@ class Client(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    
+    # Soft delete fields
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ['client_name']
         verbose_name = 'Client'
@@ -460,7 +463,7 @@ class ClientDocument(models.Model):
         related_name='documents'
     )
     document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPES)
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200,blank=True, null=True)
     file = models.FileField(upload_to='client_documents/%Y/%m/%d/')
     description = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)

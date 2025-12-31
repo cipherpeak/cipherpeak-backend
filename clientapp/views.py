@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import api_view, permission_classes
 from django.db import models
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Avg
 from django.utils import timezone
 from datetime import date
 from .models import Client, ClientDocument
@@ -17,12 +17,9 @@ from .serializers import (
     ClientEarlyPaymentSerializer,
     ClientPaymentTimelineSerializer
 )
-
+#client create and list view
 class ClientListCreateView(generics.ListCreateAPIView):
-    """
-    View for listing and creating clients
-    """
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     serializer_class = ClientSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
@@ -49,7 +46,7 @@ class ClientListCreateView(generics.ListCreateAPIView):
         """
         Optionally filter by client_type, industry, status, payment_status, payment_timing, or overdue
         """
-        queryset = Client.objects.all()
+        queryset = Client.objects.filter(is_deleted=False)
         
         # Manual filtering for client_type
         client_type = self.request.query_params.get('client_type', None)
@@ -96,6 +93,15 @@ class ClientListCreateView(generics.ListCreateAPIView):
         if payment_cycle:
             queryset = queryset.filter(payment_cycle=payment_cycle)
             
+        # Filter to show deleted clients (only for admin or special view)
+        show_deleted = self.request.query_params.get('show_deleted', None)
+        if show_deleted and show_deleted.lower() == 'true':
+            # Only allow this for staff/admin users
+            if self.request.user.is_staff or self.request.user.is_superuser:
+                queryset = Client.objects.all()  # Show all including deleted
+            else:
+                queryset = queryset.filter(is_deleted=False)
+            
         return queryset
 
     def get_serializer_class(self):
@@ -104,24 +110,54 @@ class ClientListCreateView(generics.ListCreateAPIView):
             return ClientListSerializer
         return ClientSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Override create to add permission check"""
+        # Check if user has permission to create clients
+        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+            return Response(
+                {"error": "Permission denied. Only Superusers and Admins can create clients."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                "message": "Client created successfully!",
+                "client": serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+
     def perform_create(self, serializer):
         """Save the client"""
         serializer.save()
 
+
+#clent detail view
 class ClientDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    View for retrieving, updating and deleting a specific client
-    """
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     serializer_class = ClientSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
+
+
+#client update view
+class ClientUpdateView(generics.UpdateAPIView):
+    queryset = Client.objects.filter(is_deleted=False)
+    serializer_class = ClientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
 
 class ClientPaymentStatusUpdateView(generics.UpdateAPIView):
     """
     View for updating client payment status with support for early payments
     """
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     serializer_class = ClientPaymentStatusUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
@@ -152,7 +188,7 @@ class ClientMarkPaymentPaidView(generics.GenericAPIView):
     View to mark client payment as paid
     """
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     lookup_field = 'id'
 
     def post(self, request, *args, **kwargs):
@@ -171,7 +207,7 @@ class ClientMarkEarlyPaymentView(generics.GenericAPIView):
     View to mark client payment as early paid
     """
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     lookup_field = 'id'
     serializer_class = ClientEarlyPaymentSerializer
 
@@ -197,16 +233,28 @@ class ClientPaymentTimelineView(generics.RetrieveAPIView):
     """
     View for retrieving client payment timeline information
     """
-    queryset = Client.objects.all()
+    queryset = Client.objects.filter(is_deleted=False)
     serializer_class = ClientPaymentTimelineSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
+
+#class for uploading client documents
+class ClientDocumentUploadView(generics.CreateAPIView):
+    queryset = ClientDocument.objects.filter(client__is_deleted=False)
+    serializer_class = ClientDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        """Associate the document with the specified client"""
+        client_id = self.kwargs.get('id')
+        client = generics.get_object_or_404(Client, id=client_id, is_deleted=False)
+        serializer.save(client=client, uploaded_by=self.request.user)
+
+
+# client document list      
 class ClientDocumentListCreateView(generics.ListCreateAPIView):
-    """
-    View for listing and creating client documents
-    """
-    queryset = ClientDocument.objects.all()
+    queryset = ClientDocument.objects.filter(client__is_deleted=False)
     serializer_class = ClientDocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter]
@@ -216,12 +264,12 @@ class ClientDocumentListCreateView(generics.ListCreateAPIView):
         """
         Optionally filter by client or document_type
         """
-        queryset = ClientDocument.objects.all()
+        queryset = ClientDocument.objects.filter(client__is_deleted=False)
         
         # Filter by client
         client_id = self.request.query_params.get('client', None)
         if client_id:
-            queryset = queryset.filter(client_id=client_id)
+            queryset = queryset.filter(client_id=client_id, client__is_deleted=False)
             
         # Filter by document_type
         document_type = self.request.query_params.get('document_type', None)
@@ -234,77 +282,79 @@ class ClientDocumentListCreateView(generics.ListCreateAPIView):
         """Set the uploaded_by user when creating a document"""
         serializer.save(uploaded_by=self.request.user)
 
+
+
+#client document detail view
 class ClientDocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    View for retrieving, updating and deleting a specific client document
-    """
-    queryset = ClientDocument.objects.all()
+    queryset = ClientDocument.objects.filter(client__is_deleted=False)
     serializer_class = ClientDocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
+
+#client statistics view
 class ClientStatsView(generics.GenericAPIView):
-    """
-    View for getting client statistics
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        total_clients = Client.objects.count()
-        active_clients = Client.objects.filter(status='active').count()
-        prospect_clients = Client.objects.filter(status='prospect').count()
+        # Use base queryset excluding deleted clients
+        base_queryset = Client.objects.filter(is_deleted=False)
+        
+        total_clients = base_queryset.count()
+        active_clients = base_queryset.filter(status='active').count()
+        prospect_clients = base_queryset.filter(status='prospect').count()
         
         # Payment statistics
-        overdue_payments = Client.objects.filter(current_month_payment_status='overdue').count()
-        paid_payments = Client.objects.filter(current_month_payment_status='paid').count()
-        early_payments = Client.objects.filter(current_month_payment_status='early_paid').count()
-        pending_payments = Client.objects.filter(current_month_payment_status='pending').count()
-        partial_payments = Client.objects.filter(current_month_payment_status='partial').count()
+        overdue_payments = base_queryset.filter(current_month_payment_status='overdue').count()
+        paid_payments = base_queryset.filter(current_month_payment_status='paid').count()
+        early_payments = base_queryset.filter(current_month_payment_status='early_paid').count()
+        pending_payments = base_queryset.filter(current_month_payment_status='pending').count()
+        partial_payments = base_queryset.filter(current_month_payment_status='partial').count()
         
         # Payment timing statistics
-        early_timing = Client.objects.filter(payment_timing='early').count()
-        on_time_timing = Client.objects.filter(payment_timing='on_time').count()
-        late_timing = Client.objects.filter(payment_timing='late').count()
+        early_timing = base_queryset.filter(payment_timing='early').count()
+        on_time_timing = base_queryset.filter(payment_timing='on_time').count()
+        late_timing = base_queryset.filter(payment_timing='late').count()
         
         # Revenue statistics
-        total_monthly_revenue = Client.objects.filter(status='active').aggregate(
+        total_monthly_revenue = base_queryset.filter(status='active').aggregate(
             total_revenue=Sum('monthly_retainer')
         )['total_revenue'] or 0
         
         # Early payment revenue
-        early_payment_revenue = Client.objects.filter(
+        early_payment_revenue = base_queryset.filter(
             current_month_payment_status='early_paid'
         ).aggregate(
             total_early_revenue=Sum('early_payment_amount')
         )['total_early_revenue'] or 0
         
         # Clients with overdue payments
-        clients_with_overdue_payments = Client.objects.filter(
+        clients_with_overdue_payments = base_queryset.filter(
             current_month_payment_status='overdue',
             status='active'
         ).count()
         
         # Clients by type
-        clients_by_type = Client.objects.values('client_type').annotate(count=Count('id'))
+        clients_by_type = base_queryset.values('client_type').annotate(count=Count('id'))
         
         # Clients by industry
-        clients_by_industry = Client.objects.values('industry').annotate(count=Count('id'))
+        clients_by_industry = base_queryset.values('industry').annotate(count=Count('id'))
         
         # Clients by status
-        clients_by_status = Client.objects.values('status').annotate(count=Count('id'))
+        clients_by_status = base_queryset.values('status').annotate(count=Count('id'))
         
         # Clients by payment status
-        clients_by_payment_status = Client.objects.values('current_month_payment_status').annotate(count=Count('id'))
+        clients_by_payment_status = base_queryset.values('current_month_payment_status').annotate(count=Count('id'))
         
         # Clients by payment timing
-        clients_by_payment_timing = Client.objects.values('payment_timing').annotate(count=Count('id'))
+        clients_by_payment_timing = base_queryset.values('payment_timing').annotate(count=Count('id'))
         
         # Clients by payment cycle
-        clients_by_payment_cycle = Client.objects.values('payment_cycle').annotate(count=Count('id'))
+        clients_by_payment_cycle = base_queryset.values('payment_cycle').annotate(count=Count('id'))
         
         # Upcoming payments (due in next 7 days)
         next_week = timezone.now().date() + timezone.timedelta(days=7)
-        upcoming_payments = Client.objects.filter(
+        upcoming_payments = base_queryset.filter(
             next_payment_date__lte=next_week,
             next_payment_date__gte=timezone.now().date(),
             current_month_payment_status__in=['pending', 'overdue']
@@ -312,7 +362,7 @@ class ClientStatsView(generics.GenericAPIView):
         
         # Recent early payments (last 30 days)
         thirty_days_ago = timezone.now().date() - timezone.timedelta(days=30)
-        recent_early_payments = Client.objects.filter(
+        recent_early_payments = base_queryset.filter(
             early_payment_date__gte=thirty_days_ago
         ).count()
         
@@ -360,7 +410,8 @@ class ClientUpcomingPaymentsView(generics.ListAPIView):
         queryset = Client.objects.filter(
             next_payment_date__lte=target_date,
             next_payment_date__gte=timezone.now().date(),
-            status='active'
+            status='active',
+            is_deleted=False
         ).order_by('next_payment_date')
         
         return queryset
@@ -378,7 +429,8 @@ class ClientOverduePaymentsView(generics.ListAPIView):
         """
         queryset = Client.objects.filter(
             current_month_payment_status='overdue',
-            status='active'
+            status='active',
+            is_deleted=False
         ).order_by('next_payment_date')
         
         return queryset
@@ -396,7 +448,8 @@ class ClientEarlyPaymentsView(generics.ListAPIView):
         """
         queryset = Client.objects.filter(
             current_month_payment_status='early_paid',
-            status='active'
+            status='active',
+            is_deleted=False
         ).order_by('-early_payment_date')
         
         # Filter by recent early payments (optional)
@@ -407,10 +460,9 @@ class ClientEarlyPaymentsView(generics.ListAPIView):
             
         return queryset
 
+
+#client active list view
 class ClientActiveListView(generics.ListAPIView):
-    """
-    View for listing active clients only
-    """
     serializer_class = ClientListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
@@ -428,7 +480,7 @@ class ClientActiveListView(generics.ListAPIView):
         """
         Return only active clients
         """
-        return Client.objects.filter(status='active')
+        return Client.objects.filter(status='active', is_deleted=False)
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -439,8 +491,9 @@ def reset_monthly_payments(request):
     """
     if request.method == 'POST':
         updated_count = 0
-        # Reset both paid and early_paid statuses
+        # Reset both paid and early_paid statuses for non-deleted clients
         clients = Client.objects.filter(
+            is_deleted=False,
             current_month_payment_status__in=['paid', 'early_paid']
         )
         
@@ -459,8 +512,11 @@ def client_payment_analytics(request):
     """
     Endpoint for detailed payment analytics
     """
+    # Use base queryset excluding deleted clients
+    base_queryset = Client.objects.filter(is_deleted=False)
+    
     # Early payment analysis
-    early_payment_analysis = Client.objects.filter(
+    early_payment_analysis = base_queryset.filter(
         early_payment_date__isnull=False
     ).aggregate(
         total_early_payments=Count('id'),
@@ -469,7 +525,7 @@ def client_payment_analytics(request):
     )
     
     # Payment timing analysis
-    payment_timing_analysis = Client.objects.values('payment_timing').annotate(
+    payment_timing_analysis = base_queryset.values('payment_timing').annotate(
         count=Count('id'),
         avg_revenue=Avg('monthly_retainer')
     )
@@ -487,4 +543,73 @@ def client_payment_analytics(request):
     
     return Response(monthly_stats, status=status.HTTP_200_OK)
 
+
+
+# Optional: Add endpoints to view and restore deleted clients
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def list_deleted_clients(request):
+    """
+    Endpoint to list deleted clients (admin only)
+    """
+    if not (request.user.is_staff or request.user.is_superuser):
+        return Response(
+            {'error': 'You do not have permission to view deleted clients.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    deleted_clients = Client.objects.filter(is_deleted=True).order_by('-deleted_at')
+    serializer = ClientListSerializer(deleted_clients, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def restore_client(request, id):
+    """
+    Endpoint to restore a deleted client (admin only)
+    """
+    if not (request.user.is_staff or request.user.is_superuser):
+        return Response(
+            {'error': 'You do not have permission to restore clients.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        client = Client.objects.get(id=id, is_deleted=True)
+        client.is_deleted = False
+        client.deleted_at = None
+        client.save()
+        
+        return Response(
+            {'message': f'Client {client.client_name} restored successfully.'},
+            status=status.HTTP_200_OK
+        )
+    except Client.DoesNotExist:
+        return Response(
+            {'error': 'Deleted client not found.'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+ 
+    
+#client delete view
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def delete_client(request, id):
+    try:
+        client = Client.objects.get(id=id, is_deleted=False)
+
+        client.is_deleted = True
+        client.deleted_at = timezone.now()
+        client.save()
+
+        return Response(
+            {'message': f'Client deleted successfully.'},
+            status=status.HTTP_200_OK
+        )
+
+    except Client.DoesNotExist:
+        return Response(
+            {'error': 'Client not found or already deleted.'},
+            status=status.HTTP_404_NOT_FOUND
+        )
 

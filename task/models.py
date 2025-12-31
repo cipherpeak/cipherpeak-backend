@@ -45,6 +45,8 @@ class Task(models.Model):
     created_by = models.ForeignKey('emplyees.CustomUser', on_delete=models.CASCADE, related_name='created_tasks')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

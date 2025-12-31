@@ -68,6 +68,7 @@ class EventCreateSerializer(serializers.ModelSerializer):
             'is_recurring',
             'recurrence_pattern'
         ]
+        
     
     def validate_event_date(self, value):
         """Validate that event date is in the future"""

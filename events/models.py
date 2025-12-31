@@ -83,7 +83,8 @@ class Event(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     # Status field for event lifecycle
     STATUS_CHOICES = [
         ('scheduled', 'Scheduled'),
@@ -176,3 +177,11 @@ class Event(models.Model):
                 else:
                     return f"{hours} hour{'s' if hours > 1 else ''} {minutes} minutes"
         return "Not specified"
+
+    def soft_delete(self, user=None):
+        """
+        Soft delete the event
+        """
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.save()
