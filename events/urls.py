@@ -3,12 +3,25 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    #create event
     path('events/', views.EventListCreateView.as_view(), name='event-list-create'),
-    path('events/<int:id>/', views.EventDetailView.as_view(), name='event-detail'),
+    
+    #update event
+    path('events/<int:id>/update/', views.EventDetailView.as_view(), name='event-update'),
+
+    #get event
+    path('events/<int:id>/',views.EventDetailView.as_view(),name='event-detail'),
+
+    #event list
+    path('events/event_list/',views.EventListCreateView.as_view(),name='event-list'),
+    
     path('events/<int:id>/status/', views.EventStatusUpdateView.as_view(), name='event-status-update'),
     path('events/stats/', views.EventStatsView.as_view(), name='event-stats'),
     path('events/my-events/', views.MyEventsView.as_view(), name='my-events'),
     path('events/created-by-me/', views.EventsCreatedByMeView.as_view(), name='events-created-by-me'),
     path('events/employee/<int:employee_id>/', views.EmployeeEventsView.as_view(), name='employee-events'),
     path('events/calendar/', views.CalendarEventsView.as_view(), name='calendar-events'),
+
+    #delete event
+    path('events/<int:id>/delete/', views.EventSoftDeleteView.as_view(), name='event-delete'),
 ]

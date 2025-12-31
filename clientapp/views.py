@@ -110,6 +110,28 @@ class ClientListCreateView(generics.ListCreateAPIView):
             return ClientListSerializer
         return ClientSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Override create to add permission check"""
+        # Check if user has permission to create clients
+        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+            return Response(
+                {"error": "Permission denied. Only Superusers and Admins can create clients."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                "message": "Client created successfully!",
+                "client": serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+
     def perform_create(self, serializer):
         """Save the client"""
         serializer.save()

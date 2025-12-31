@@ -49,16 +49,12 @@ def user_profile(request):
 def create_employee(request):
     try:
         # Check if user has permission to create employees
-        if not request.user.is_superuser and request.user.role not in ['director', 'managing_director', 'manager']:
-            return Response(
+        if not request.user.is_superuser and request.user.role not in ['superuser', 'admin']:
+            return Response (
                 {'error': 'You do not have permission to create employees'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Debug: Check what data is being received
-        print("Request data:", request.data)
-        print("Request FILES:", request.FILES)
-        
         serializer = EmployeeCreateSerializer(data=request.data)
         
         if serializer.is_valid():
@@ -186,9 +182,6 @@ def update_employee(request, employee_id):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-           
-                
-            
             if 'email' in request.data:
                 new_email = request.data['email']
                 if CustomUser.objects.filter(email=new_email).exclude(id=employee_id).exists():
@@ -202,9 +195,6 @@ def update_employee(request, employee_id):
             
             employee.refresh_from_db()
 
-            
-
-            
             response_serializer = UserSerializer(employee, context={'request': request})
             return Response(
                 {

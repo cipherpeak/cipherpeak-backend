@@ -23,12 +23,39 @@ class TaskListCreateView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return TaskCreateSerializer
         return TaskSerializer
+    def create(self, request, *args, **kwargs):
+        """Override create to add permission check"""
+        # Check if user has permission to create tasks
+        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+            return Response(
+                {"error": "Permission denied. Only Superusers and Admins can create tasks."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # The rest of your create method
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(  # MAKE SURE THIS RETURN STATEMENT IS PRESENT
+            {
+                "message": "Task created successfully!",
+                "task": serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
 
     def get_queryset(self):
         """
         Optionally filter by status, priority, task_type, assignee, client, or overdue
         """
         queryset = Task.objects.filter(is_deleted=False)
+        
+        # Filter based on user role - Employees see only their assigned tasks
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assignee=user)
         
         # Filter by status if provided
         status_filter = self.request.query_params.get('status')
@@ -88,7 +115,14 @@ class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
         return TaskSerializer
 
     def get_queryset(self):
-        return Task.objects.filter(is_deleted=False).select_related('assignee', 'created_by', 'client')
+        queryset = Task.objects.filter(is_deleted=False).select_related('assignee', 'created_by', 'client')
+        
+        # Filter based on user role
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assignee=user)
+            
+        return queryset
 
 class TaskStatusUpdateView(generics.UpdateAPIView):
     """
@@ -288,6 +322,13 @@ class TaskSoftDeleteView(APIView):
         """Helper to get the task and check if it exists or is deleted"""
         try:
             task = Task.objects.get(id=task_id)
+            
+            # Check permissions
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['superuser', 'admin']:
+                if task.assignee != user:
+                    raise Task.DoesNotExist
+            
             if task.is_deleted:
                 raise Task.DoesNotExist
             return task
@@ -305,10 +346,7 @@ class TaskSoftDeleteView(APIView):
             
             return Response(
                 {
-                    'message': f'Task "{instance.title}" deleted successfully.',
-                    'task_id': instance.id,
-                    'task_title': instance.title,
-                    'deleted_at': instance.deleted_at
+                    'message': f'Task deleted successfully.',
                 },
                 status=status.HTTP_200_OK
             )

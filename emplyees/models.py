@@ -7,11 +7,9 @@ from django.utils import timezone
 class CustomUser(AbstractUser):
     # Role Choices
     ROLE_CHOICES = [
-        ('director', 'Director'),
-        ('managing_director', 'Managing Director'),
+        ('superuser', 'Superuser'),
+        ('admin', 'Admin'),
         ('employee', 'Employee'),
-        ('manager', 'Manager'),
-        ('team_lead', 'Team Lead'),
     ]
     
     # Status Choices

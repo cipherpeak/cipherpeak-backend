@@ -5,12 +5,13 @@ from django.db import models
 from django.utils import timezone
 from .models import Event
 from .serializers import EventSerializer, EventCreateSerializer, EventUpdateSerializer, EventStatusUpdateSerializer
-
+from rest_framework.views import APIView
 class EventListCreateView(generics.ListCreateAPIView):
     """
     View for listing and creating events
     """
-    queryset = Event.objects.all()
+
+    queryset = Event.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description', 'assigned_employee__first_name', 'assigned_employee__last_name', 'location']
@@ -21,12 +22,37 @@ class EventListCreateView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return EventCreateSerializer
         return EventSerializer
-
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+             return Response(
+                {"error": "Permission denied. Only Superusers and Admins can create events."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                "success": True,
+                "message": "Event created successfully!",
+                "event": serializer.data
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+    
     def get_queryset(self):
         """
         Optionally filter by event_type, status, assigned_employee, or date range
         """
-        queryset = Event.objects.all()
+        queryset = Event.objects.filter(is_deleted=False)
+        
+        # Filter based on user role - Employees see only their assigned events
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assigned_employee=user)
         
         # Filter by event type if provided
         event_type = self.request.query_params.get('event_type')
@@ -87,7 +113,7 @@ class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     View for retrieving, updating and deleting a specific event
     """
-    queryset = Event.objects.all()
+    queryset = Event.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
@@ -97,7 +123,15 @@ class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
         return EventSerializer
 
     def get_queryset(self):
-        return Event.objects.select_related('assigned_employee', 'created_by')
+        queryset = Event.objects.filter(is_deleted=False).select_related('assigned_employee', 'created_by')
+        
+        # Filter based on user role
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assigned_employee=user)
+            
+        return queryset
+    
 
 class EventStatusUpdateView(generics.UpdateAPIView):
     """
@@ -354,3 +388,35 @@ class CalendarEventsView(generics.ListAPIView):
             queryset = queryset.filter(assigned_employee_id=assigned_employee_id)
         
         return queryset.select_related('assigned_employee', 'created_by')
+
+
+class EventSoftDeleteView(generics.DestroyAPIView):
+    """
+    View for soft deleting a specific event
+    """
+    queryset = Event.objects.filter(is_deleted=False)
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        queryset = Event.objects.filter(is_deleted=False)
+        # Filter based on user role to prevent unauthorized deletion
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assigned_employee=user)
+        return queryset
+    
+    def perform_destroy(self, instance):
+        """Perform soft delete"""
+        instance.soft_delete(user=self.request.user)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(
+            {
+                "message": "Event deleted successfully!"
+            },
+            status=status.HTTP_200_OK
+        )
+    
