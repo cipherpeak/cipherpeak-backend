@@ -4,16 +4,17 @@ from . import views
 
 urlpatterns = [
     #create event
-    path('events/', views.EventListCreateView.as_view(), name='event-list-create'),
+    path('events/', views.EventCreateView.as_view(), name='event-create'),
+    
     
     #update event
-    path('events/<int:id>/update/', views.EventDetailView.as_view(), name='event-update'),
+    path('events/<int:id>/update/', views.EventUpdateView.as_view(), name='event-update'),
 
     #get event
     path('events/<int:id>/',views.EventDetailView.as_view(),name='event-detail'),
 
     #event list
-    path('events/event_list/',views.EventListCreateView.as_view(),name='event-list'),
+    path('event_list/', views.EventListView.as_view(), name='event-list'),
     
     path('events/<int:id>/status/', views.EventStatusUpdateView.as_view(), name='event-status-update'),
     path('events/stats/', views.EventStatsView.as_view(), name='event-stats'),

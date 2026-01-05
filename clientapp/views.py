@@ -1,5 +1,5 @@
-# client/views.py
 from rest_framework import generics, permissions, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import api_view, permission_classes
@@ -15,142 +15,164 @@ from .serializers import (
     ClientListSerializer,
     ClientStatsSerializer,
     ClientEarlyPaymentSerializer,
-    ClientPaymentTimelineSerializer
+    ClientPaymentTimelineSerializer,
+    ClientDetailSerializer,
+    ClientUpdateSerializer
 )
-#client create and list view
-class ClientListCreateView(generics.ListCreateAPIView):
-    queryset = Client.objects.filter(is_deleted=False)
-    serializer_class = ClientSerializer
+
+
+#client create view
+class ClientCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = [
-        'client_name', 
-        'contact_person_name', 
-        'contact_email', 
-        'owner_name',
-        'company'
-    ]
-    ordering_fields = [
-        'client_name', 
-        'onboarding_date', 
-        'created_at', 
-        'status',
-        'monthly_retainer',
-        'next_payment_date',
-        'early_payment_date',
-        'last_payment_date'
-    ]
-    ordering = ['-created_at']
 
-    def get_queryset(self):
-        """
-        Optionally filter by client_type, industry, status, payment_status, payment_timing, or overdue
-        """
-        queryset = Client.objects.filter(is_deleted=False)
-        
-        # Manual filtering for client_type
-        client_type = self.request.query_params.get('client_type', None)
-        if client_type:
-            queryset = queryset.filter(client_type=client_type)
-            
-        # Manual filtering for industry
-        industry = self.request.query_params.get('industry', None)
-        if industry:
-            queryset = queryset.filter(industry=industry)
-            
-        # Manual filtering for status
-        status_filter = self.request.query_params.get('status', None)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-            
-        # Manual filtering for payment_status
-        payment_status = self.request.query_params.get('payment_status', None)
-        if payment_status:
-            queryset = queryset.filter(current_month_payment_status=payment_status)
-            
-        # Manual filtering for payment_timing
-        payment_timing = self.request.query_params.get('payment_timing', None)
-        if payment_timing:
-            queryset = queryset.filter(payment_timing=payment_timing)
-            
-        # Filter overdue payments
-        overdue = self.request.query_params.get('overdue', None)
-        if overdue and overdue.lower() == 'true':
-            queryset = queryset.filter(current_month_payment_status='overdue')
-            
-        # Filter early payments
-        early_payments = self.request.query_params.get('early_payments', None)
-        if early_payments and early_payments.lower() == 'true':
-            queryset = queryset.filter(current_month_payment_status='early_paid')
-            
-        # Filter active clients only
-        active_only = self.request.query_params.get('active_only', None)
-        if active_only and active_only.lower() == 'true':
-            queryset = queryset.filter(status='active')
-            
-        # Filter by payment cycle
-        payment_cycle = self.request.query_params.get('payment_cycle', None)
-        if payment_cycle:
-            queryset = queryset.filter(payment_cycle=payment_cycle)
-            
-        # Filter to show deleted clients (only for admin or special view)
-        show_deleted = self.request.query_params.get('show_deleted', None)
-        if show_deleted and show_deleted.lower() == 'true':
-            # Only allow this for staff/admin users
-            if self.request.user.is_staff or self.request.user.is_superuser:
-                queryset = Client.objects.all()  # Show all including deleted
-            else:
-                queryset = queryset.filter(is_deleted=False)
-            
-        return queryset
-
-    def get_serializer_class(self):
-        """Use different serializer for list vs create"""
-        if self.request.method == 'GET':
-            return ClientListSerializer
-        return ClientSerializer
-
-    def create(self, request, *args, **kwargs):
-        """Override create to add permission check"""
+    def post(self, request):
+        """Create client with permission check"""
         # Check if user has permission to create clients
-        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+        if request.user.role not in ['director', 'managing_director'] and not request.user.is_superuser:
             return Response(
-                {"error": "Permission denied. Only Superusers and Admins can create clients."},
+                {"error": "Permission denied. Only Directors and Managing Directors can create clients."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            {
-                "message": "Client created successfully!",
-                "client": serializer.data
-            },
-            status=status.HTTP_201_CREATED,
-            headers=headers
-        )
-
-    def perform_create(self, serializer):
-        """Save the client"""
-        serializer.save()
+        serializer = ClientSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "message": "Client created successfully!",
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-#clent detail view
-class ClientDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Client.objects.filter(is_deleted=False)
-    serializer_class = ClientSerializer
+#clent detail view   
+class ClientDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
+
+    def get_object(self, id):
+        try:
+            return Client.objects.get(id=id, is_deleted=False)
+        except Client.DoesNotExist:
+            return None
+
+    def get(self, request, id):
+        client = self.get_object(id)
+        if not client:
+            return Response({"error": "Client not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClientDetailSerializer(client)
+        return Response(serializer.data)
+
+
+#client active list view
+class ClientListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """
+        Return only active clients with searching and ordering
+        """
+        queryset = Client.objects.filter(status='active', is_deleted=False)
+        
+        # Searching
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                models.Q(client_name__icontains=search) |
+                models.Q(contact_person_name__icontains=search)
+            )
+
+        # Ordering
+        ordering = request.query_params.get('ordering', 'client_name')
+        queryset = queryset.order_by(ordering)
+
+        serializer = ClientListSerializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 #client update view
-class ClientUpdateView(generics.UpdateAPIView):
-    queryset = Client.objects.filter(is_deleted=False)
-    serializer_class = ClientSerializer
+class ClientUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
+
+    def get_object(self, id):
+        try:
+            return Client.objects.get(id=id, is_deleted=False)
+        except Client.DoesNotExist:
+            return None
+
+    def put(self, request, id):
+        client = self.get_object(id)
+        if not client:
+            return Response({"error": "Client not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClientUpdateSerializer(client, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "message": "Client updated successfully",
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, id):
+        client = self.get_object(id)
+        if not client:
+            return Response({"error": "Client not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ClientUpdateSerializer(client, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "message": "Client updated successfully",
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+#class for uploading client documents
+class ClientDocumentUploadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id):
+        """
+        Create a new document for the specified client
+        """
+        client = generics.get_object_or_404(Client, id=id, is_deleted=False)
+        
+        serializer = ClientDocumentSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            document = serializer.save(client=client, uploaded_by=request.user)
+            return Response({
+                "message": "Document uploaded successfully",
+                "document": ClientDocumentSerializer(document).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+#client delete view
+class ClientDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, id):
+        try:
+            client = Client.objects.get(id=id, is_deleted=False)
+
+            client.is_deleted = True
+            client.deleted_at = timezone.now()
+            client.save()
+
+            return Response(
+                {'message': f'Client deleted successfully.'},
+                status=status.HTTP_200_OK
+            )
+
+        except Client.DoesNotExist:
+            return Response(
+                {'error': 'Client not found or already deleted.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+
+
 
 
 class ClientPaymentStatusUpdateView(generics.UpdateAPIView):
@@ -238,58 +260,6 @@ class ClientPaymentTimelineView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
-
-#class for uploading client documents
-class ClientDocumentUploadView(generics.CreateAPIView):
-    queryset = ClientDocument.objects.filter(client__is_deleted=False)
-    serializer_class = ClientDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def perform_create(self, serializer):
-        """Associate the document with the specified client"""
-        client_id = self.kwargs.get('id')
-        client = generics.get_object_or_404(Client, id=client_id, is_deleted=False)
-        serializer.save(client=client, uploaded_by=self.request.user)
-
-
-# client document list      
-class ClientDocumentListCreateView(generics.ListCreateAPIView):
-    queryset = ClientDocument.objects.filter(client__is_deleted=False)
-    serializer_class = ClientDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter]
-    search_fields = ['title', 'description', 'document_type']
-
-    def get_queryset(self):
-        """
-        Optionally filter by client or document_type
-        """
-        queryset = ClientDocument.objects.filter(client__is_deleted=False)
-        
-        # Filter by client
-        client_id = self.request.query_params.get('client', None)
-        if client_id:
-            queryset = queryset.filter(client_id=client_id, client__is_deleted=False)
-            
-        # Filter by document_type
-        document_type = self.request.query_params.get('document_type', None)
-        if document_type:
-            queryset = queryset.filter(document_type=document_type)
-            
-        return queryset
-
-    def perform_create(self, serializer):
-        """Set the uploaded_by user when creating a document"""
-        serializer.save(uploaded_by=self.request.user)
-
-
-
-#client document detail view
-class ClientDocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ClientDocument.objects.filter(client__is_deleted=False)
-    serializer_class = ClientDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
 
 
 #client statistics view
@@ -461,26 +431,7 @@ class ClientEarlyPaymentsView(generics.ListAPIView):
         return queryset
 
 
-#client active list view
-class ClientActiveListView(generics.ListAPIView):
-    serializer_class = ClientListSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['client_name', 'contact_person_name']
-    ordering_fields = [
-        'client_name', 
-        'next_payment_date', 
-        'monthly_retainer',
-        'early_payment_date',
-        'last_payment_date'
-    ]
-    ordering = ['client_name']
 
-    def get_queryset(self):
-        """
-        Return only active clients
-        """
-        return Client.objects.filter(status='active', is_deleted=False)
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -545,71 +496,4 @@ def client_payment_analytics(request):
 
 
 
-# Optional: Add endpoints to view and restore deleted clients
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def list_deleted_clients(request):
-    """
-    Endpoint to list deleted clients (admin only)
-    """
-    if not (request.user.is_staff or request.user.is_superuser):
-        return Response(
-            {'error': 'You do not have permission to view deleted clients.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
-    deleted_clients = Client.objects.filter(is_deleted=True).order_by('-deleted_at')
-    serializer = ClientListSerializer(deleted_clients, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def restore_client(request, id):
-    """
-    Endpoint to restore a deleted client (admin only)
-    """
-    if not (request.user.is_staff or request.user.is_superuser):
-        return Response(
-            {'error': 'You do not have permission to restore clients.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
-    try:
-        client = Client.objects.get(id=id, is_deleted=True)
-        client.is_deleted = False
-        client.deleted_at = None
-        client.save()
-        
-        return Response(
-            {'message': f'Client {client.client_name} restored successfully.'},
-            status=status.HTTP_200_OK
-        )
-    except Client.DoesNotExist:
-        return Response(
-            {'error': 'Deleted client not found.'},
-            status=status.HTTP_404_NOT_FOUND
-        )
- 
-    
-#client delete view
-@api_view(['DELETE'])
-@permission_classes([permissions.IsAuthenticated])
-def delete_client(request, id):
-    try:
-        client = Client.objects.get(id=id, is_deleted=False)
-
-        client.is_deleted = True
-        client.deleted_at = timezone.now()
-        client.save()
-
-        return Response(
-            {'message': f'Client deleted successfully.'},
-            status=status.HTTP_200_OK
-        )
-
-    except Client.DoesNotExist:
-        return Response(
-            {'error': 'Client not found or already deleted.'},
-            status=status.HTTP_404_NOT_FOUND
-        )
 

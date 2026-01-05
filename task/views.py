@@ -6,123 +6,271 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db import models
 from django.utils import timezone
 from .models import Task
-from .serializers import TaskSerializer, TaskCreateSerializer, TaskUpdateSerializer, TaskStatusUpdateSerializer
+from .serializers import (
+    TaskCreateSerializer, 
+    TaskUpdateSerializer, 
+    TaskListSerializer, 
+    TaskSerializer, 
+    TaskDetailSerializer,
+    TaskStatusUpdateSerializer
+)
 
-class TaskListCreateView(generics.ListCreateAPIView):
+
+
+# create task view
+class TaskCreateView(APIView):
     """
-    View for listing and creating tasks
+    View for creating tasks
     """
-    queryset = Task.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['title', 'description', 'assignee__first_name', 'assignee__last_name', 'client__client_name']
-    ordering_fields = ['created_at', 'due_date', 'priority', 'status']
-    ordering = ['-created_at']
 
-    def get_serializer_class(self):
-        if self.request.method == 'POST':
-            return TaskCreateSerializer
-        return TaskSerializer
-    def create(self, request, *args, **kwargs):
-        """Override create to add permission check"""
+    def post(self, request):
+        """Create task with permission check"""
         # Check if user has permission to create tasks
-        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
+        if request.user.role not in ['director', 'managing_director'] and not request.user.is_superuser:
             return Response(
                 {"error": "Permission denied. Only Superusers and Admins can create tasks."},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # The rest of your create method
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(  # MAKE SURE THIS RETURN STATEMENT IS PRESENT
-            {
-                "message": "Task created successfully!",
-                "task": serializer.data
-            },
-            status=status.HTTP_201_CREATED,
-            headers=headers
-        )
+        serializer = TaskCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response(
+                {
+                    "message": "Task created successfully!",
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def get_queryset(self):
-        """
-        Optionally filter by status, priority, task_type, assignee, client, or overdue
-        """
+
+
+#task list view
+class TaskListView(APIView):
+    """
+    View for listing tasks with manual filtering, searching and ordering.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Base queryset - exclude deleted tasks
         queryset = Task.objects.filter(is_deleted=False)
         
-        # Filter based on user role - Employees see only their assigned tasks
-        user = self.request.user
+        # Role-based visibility: Employees only see their own tasks
+        user = request.user
         if not user.is_superuser and user.role not in ['superuser', 'admin']:
             queryset = queryset.filter(assignee=user)
-        
-        # Filter by status if provided
-        status_filter = self.request.query_params.get('status')
+
+        # 1. Searching
+        search_query = request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                models.Q(title__icontains=search_query) |
+                models.Q(description__icontains=search_query) |
+                models.Q(assignee__first_name__icontains=search_query) |
+                models.Q(assignee__last_name__icontains=search_query) |
+                models.Q(client__client_name__icontains=search_query)
+            )
+
+        # 2. Filtering
+        status_filter = request.query_params.get('status', None)
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Filter by priority if provided
-        priority_filter = self.request.query_params.get('priority')
+
+        priority_filter = request.query_params.get('priority', None)
         if priority_filter:
             queryset = queryset.filter(priority=priority_filter)
-        
-        # Filter by task type if provided
-        task_type = self.request.query_params.get('task_type')
+
+        task_type = request.query_params.get('task_type', None)
         if task_type:
             queryset = queryset.filter(task_type=task_type)
-        
-        # Filter by assignee if provided
-        assignee_id = self.request.query_params.get('assignee')
+
+        assignee_id = request.query_params.get('assignee', None)
         if assignee_id:
             queryset = queryset.filter(assignee_id=assignee_id)
-        
-        # Filter by client if provided
-        client_id = self.request.query_params.get('client')
+
+        client_id = request.query_params.get('client', None)
         if client_id:
             queryset = queryset.filter(client_id=client_id)
-        
-        # Filter overdue tasks
-        overdue = self.request.query_params.get('overdue')
+
+        # Overdue tasks
+        overdue = request.query_params.get('overdue', None)
         if overdue and overdue.lower() == 'true':
-            queryset = queryset.filter(due_date__lt=timezone.now(), status__in=['pending', 'in_progress'])
-        
-        # Filter by date range
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
+            queryset = queryset.filter(
+                due_date__lt=timezone.now(), 
+                status__in=['pending', 'in_progress']
+            )
+
+        # Date range filtering
+        start_date = request.query_params.get('start_date', None)
         if start_date:
             queryset = queryset.filter(due_date__gte=start_date)
+            
+        end_date = request.query_params.get('end_date', None)
         if end_date:
             queryset = queryset.filter(due_date__lte=end_date)
+
+        # 3. Ordering
+        ordering = request.query_params.get('ordering', '-created_at')
+        valid_ordering_fields = ['created_at', '-created_at', 'due_date', '-due_date', 'priority', '-priority', 'status', '-status']
+        if ordering not in valid_ordering_fields:
+            ordering = '-created_at'
         
-        return queryset.select_related('assignee', 'created_by', 'client')
+        queryset = queryset.order_by(ordering).select_related('assignee', 'created_by', 'client')
 
-    def perform_create(self, serializer):
-        """Set the created_by field to the current user"""
-        serializer.save(created_by=self.request.user)
+        # Serialization
+        serializer = TaskListSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
+
+#task detail view
+class TaskDetailView(APIView):
     """
-    View for retrieving, updating and deleting a specific task
+    View for retrieving and updating a specific task
     """
-    queryset = Task.objects.filter(is_deleted=False) 
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
 
-    def get_serializer_class(self):
-        if self.request.method in ['PUT', 'PATCH']:
-            return TaskUpdateSerializer
-        return TaskSerializer
-
-    def get_queryset(self):
-        queryset = Task.objects.filter(is_deleted=False).select_related('assignee', 'created_by', 'client')
-        
-        # Filter based on user role
-        user = self.request.user
-        if not user.is_superuser and user.role not in ['superuser', 'admin']:
-            queryset = queryset.filter(assignee=user)
+    def get_object(self, id):
+        """Helper to get the task and enforce accessibility rules"""
+        try:
+            task = Task.objects.get(id=id, is_deleted=False)
             
-        return queryset
+            # Filter based on user role - Employees see only their assigned tasks
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['director', 'managing_director']:
+                if task.assignee != user:
+                    return None
+            
+            return task
+        except Task.DoesNotExist:
+            return None
+
+    def get(self, request, id):
+        """Retrieve task details"""
+        task = self.get_object(id)
+        if not task:
+            return Response(
+                {"error": "Task not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = TaskDetailSerializer(task)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+#task update view
+class TaskUpdateView(APIView):
+    """
+    View for updating a specific task
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, id):
+        """Helper to get the task and enforce accessibility rules"""
+        try:
+            task = Task.objects.get(id=id, is_deleted=False)
+            
+            # Filter based on user role - Employees see only their assigned tasks
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['director', 'managing_director']:
+                if task.assignee != user:
+                    return None
+            
+            return task
+        except Task.DoesNotExist:
+            return None
+
+    def put(self, request, id):
+        """Full update of a task"""
+        task = self.get_object(id)
+        if not task:
+            return Response(
+                {"error": "Task not found or access denied."},
+               
+            )
+            
+        serializer = TaskUpdateSerializer(task, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Task updated successfully"},
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, id):
+        """Partial update of a task"""
+        task = self.get_object(id)
+        if not task:
+            return Response(
+                {"error": "Task not found or access denied."},
+                
+            )
+            
+        serializer = TaskUpdateSerializer(task, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Task updated successfully"},
+                
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TaskDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, task_id):
+        """Helper to get the task and check if it exists or is deleted"""
+        try:
+            task = Task.objects.get(id=task_id)
+            
+            # Check permissions
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['superuser', 'admin']:
+                if task.assignee != user:
+                    raise Task.DoesNotExist
+            
+            if task.is_deleted:
+                raise Task.DoesNotExist
+            return task
+        except Task.DoesNotExist:
+            raise
+
+    def delete(self, request, id):
+        """Soft delete the task"""
+        try:
+            instance = self.get_object(id)
+            
+            instance.is_deleted = True
+            instance.deleted_at = timezone.now()
+            instance.save()
+            
+            return Response(
+                {
+                    'message': f'Task deleted successfully.',
+                },
+                status=status.HTTP_200_OK
+            )
+        except Task.DoesNotExist:
+            return Response(
+                {'error': 'Task not found or already deleted.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class TaskStatusUpdateView(generics.UpdateAPIView):
     """
@@ -201,6 +349,7 @@ class TaskStatsView(generics.GenericAPIView):
         
         return Response(stats, status=status.HTTP_200_OK)
 
+
 class MyTasksView(generics.ListAPIView):
     """
     View for listing tasks assigned to the current user
@@ -274,84 +423,4 @@ class TasksCreatedByMeView(generics.ListAPIView):
         
         return queryset.select_related('assignee', 'created_by', 'client')
 
-class ClientTasksView(generics.ListAPIView):
-    """
-    View for listing tasks for a specific client
-    """
-    serializer_class = TaskSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['title', 'description', 'assignee__first_name', 'assignee__last_name']
-    ordering_fields = ['created_at', 'due_date', 'priority', 'status']
-    ordering = ['-created_at']
 
-    def get_queryset(self):
-        """
-        Return tasks for a specific client
-        """
-        client_id = self.kwargs.get('client_id')
-        queryset = Task.objects.filter(client_id=client_id, is_deleted=False)
-        
-        # Filter by status if provided
-        status_filter = self.request.query_params.get('status')
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        
-        # Filter by priority if provided
-        priority_filter = self.request.query_params.get('priority')
-        if priority_filter:
-            queryset = queryset.filter(priority=priority_filter)
-        
-        # Filter by task type if provided
-        task_type = self.request.query_params.get('task_type')
-        if task_type:
-            queryset = queryset.filter(task_type=task_type)
-        
-        # Filter overdue tasks
-        overdue = self.request.query_params.get('overdue')
-        if overdue and overdue.lower() == 'true':
-            queryset = queryset.filter(due_date__lt=timezone.now(), status__in=['pending', 'in_progress'])
-        
-        return queryset.select_related('assignee', 'created_by', 'client')
-
-
-class TaskSoftDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_object(self, task_id):
-        """Helper to get the task and check if it exists or is deleted"""
-        try:
-            task = Task.objects.get(id=task_id)
-            
-            # Check permissions
-            user = self.request.user
-            if not user.is_superuser and user.role not in ['superuser', 'admin']:
-                if task.assignee != user:
-                    raise Task.DoesNotExist
-            
-            if task.is_deleted:
-                raise Task.DoesNotExist
-            return task
-        except Task.DoesNotExist:
-            raise
-
-    def delete(self, request, id):
-        """Soft delete the task"""
-        try:
-            instance = self.get_object(id)
-            
-            instance.is_deleted = True
-            instance.deleted_at = timezone.now()
-            instance.save()
-            
-            return Response(
-                {
-                    'message': f'Task deleted successfully.',
-                },
-                status=status.HTTP_200_OK
-            )
-        except Task.DoesNotExist:
-            return Response(
-                {'error': 'Task not found or already deleted.'},
-                status=status.HTTP_404_NOT_FOUND
-            )

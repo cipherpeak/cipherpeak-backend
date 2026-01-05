@@ -4,6 +4,38 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
+# event create serializer
+class EventCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating events"""
+    
+    class Meta:
+        model = Event
+        fields = [
+            'name',
+            'description',
+            'event_date',
+            'event_type',
+            'assigned_employee',
+            'location',
+            'status',
+            'duration_minutes',
+            'is_recurring',
+            'recurrence_pattern'
+        ]
+        
+    
+    def validate_event_date(self, value):
+        """Validate that event date is in the future"""
+        from django.utils import timezone
+        if value < timezone.now():
+            raise serializers.ValidationError("Event date cannot be in the past.")
+        return value
+
+
+
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for user details"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
@@ -51,31 +83,6 @@ class EventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_by', 'created_at', 'updated_at']
 
-class EventCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating events"""
-    
-    class Meta:
-        model = Event
-        fields = [
-            'name',
-            'description',
-            'event_date',
-            'event_type',
-            'assigned_employee',
-            'location',
-            'status',
-            'duration_minutes',
-            'is_recurring',
-            'recurrence_pattern'
-        ]
-        
-    
-    def validate_event_date(self, value):
-        """Validate that event date is in the future"""
-        from django.utils import timezone
-        if value < timezone.now():
-            raise serializers.ValidationError("Event date cannot be in the past.")
-        return value
 
 class EventUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating events"""

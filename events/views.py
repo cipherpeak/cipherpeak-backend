@@ -4,133 +4,218 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db import models
 from django.utils import timezone
 from .models import Event
-from .serializers import EventSerializer, EventCreateSerializer, EventUpdateSerializer, EventStatusUpdateSerializer
+from .serializers import (
+    EventSerializer, 
+    EventCreateSerializer, 
+    EventUpdateSerializer, 
+    EventStatusUpdateSerializer
+)
 from rest_framework.views import APIView
-class EventListCreateView(generics.ListCreateAPIView):
-    """
-    View for listing and creating events
-    """
 
-    queryset = Event.objects.filter(is_deleted=False)
+
+
+# event create view
+class EventCreateView(APIView):
+    """
+    View for creating events
+    """
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['name', 'description', 'assigned_employee__first_name', 'assigned_employee__last_name', 'location']
-    ordering_fields = ['created_at', 'event_date', 'event_type', 'status']
-    ordering = ['event_date']
 
-    def get_serializer_class(self):
-        if self.request.method == 'POST':
-            return EventCreateSerializer
-        return EventSerializer
-    def create(self, request, *args, **kwargs):
-        if request.user.role not in ['superuser', 'admin'] and not request.user.is_superuser:
-             return Response(
+    def post(self, request):
+        """Create event with permission check"""
+        # Check if user has permission to create events
+        if request.user.role not in ['director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
                 {"error": "Permission denied. Only Superusers and Admins can create events."},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            {
-                "success": True,
-                "message": "Event created successfully!",
-                "event": serializer.data
-            },
-            status=status.HTTP_201_CREATED,
-            headers=headers
-        )
-    
-    def get_queryset(self):
-        """
-        Optionally filter by event_type, status, assigned_employee, or date range
-        """
+        
+        serializer = EventCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response(
+                {
+                    "message": "Event created successfully!",
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+#event list view
+class EventListView(APIView):
+    """
+    View for listing events with manual filtering, searching and ordering.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Base queryset - exclude deleted events
         queryset = Event.objects.filter(is_deleted=False)
         
-        # Filter based on user role - Employees see only their assigned events
-        user = self.request.user
-        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+        # Role-based visibility: Employees only see their assigned events
+        user = request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin', 'director', 'managing_director']:
             queryset = queryset.filter(assigned_employee=user)
-        
-        # Filter by event type if provided
-        event_type = self.request.query_params.get('event_type')
+
+        # 1. Searching
+        search_query = request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                models.Q(name__icontains=search_query) |
+                models.Q(description__icontains=search_query) |
+                models.Q(location__icontains=search_query) |
+                models.Q(assigned_employee__first_name__icontains=search_query) |
+                models.Q(assigned_employee__last_name__icontains=search_query)
+            )
+
+        # 2. Filtering
+        event_type = request.query_params.get('event_type', None)
         if event_type:
             queryset = queryset.filter(event_type=event_type)
-        
-        # Filter by status if provided
-        status_filter = self.request.query_params.get('status')
+
+        status_filter = request.query_params.get('status', None)
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Filter by assigned employee if provided
-        assigned_employee_id = self.request.query_params.get('assigned_employee')
+
+        assigned_employee_id = request.query_params.get('assigned_employee', None)
         if assigned_employee_id:
             queryset = queryset.filter(assigned_employee_id=assigned_employee_id)
-        
-        # Filter by created by if provided
-        created_by_id = self.request.query_params.get('created_by')
+
+        created_by_id = request.query_params.get('created_by', None)
         if created_by_id:
             queryset = queryset.filter(created_by_id=created_by_id)
-        
-        # Filter recurring events
-        is_recurring = self.request.query_params.get('is_recurring')
+
+        is_recurring = request.query_params.get('is_recurring', None)
         if is_recurring:
             if is_recurring.lower() == 'true':
                 queryset = queryset.filter(is_recurring=True)
             elif is_recurring.lower() == 'false':
                 queryset = queryset.filter(is_recurring=False)
-        
-        # Filter past events
-        past_events = self.request.query_params.get('past_events')
+
+        past_events = request.query_params.get('past_events', None)
         if past_events and past_events.lower() == 'true':
             queryset = queryset.filter(event_date__lt=timezone.now())
-        
-        # Filter upcoming events (next 7 days)
-        upcoming = self.request.query_params.get('upcoming')
+
+        upcoming = request.query_params.get('upcoming', None)
         if upcoming and upcoming.lower() == 'true':
             queryset = queryset.filter(
                 event_date__gte=timezone.now(),
                 event_date__lte=timezone.now() + timezone.timedelta(days=7)
             )
-        
-        # Filter by date range
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
+
+        # Date range filtering
+        start_date = request.query_params.get('start_date', None)
         if start_date:
             queryset = queryset.filter(event_date__date__gte=start_date)
+            
+        end_date = request.query_params.get('end_date', None)
         if end_date:
             queryset = queryset.filter(event_date__date__lte=end_date)
+
+        # 3. Ordering
+        ordering = request.query_params.get('ordering', 'event_date')
+        valid_ordering_fields = ['event_date', '-event_date', 'created_at', '-created_at', 'status', '-status']
+        if ordering not in valid_ordering_fields:
+            ordering = 'event_date'
         
-        return queryset.select_related('assigned_employee', 'created_by')
+        queryset = queryset.order_by(ordering).select_related('assigned_employee', 'created_by')
 
-    def perform_create(self, serializer):
-        """Set the created_by field to the current user"""
-        serializer.save(created_by=self.request.user)
+        # Serialization
+        serializer = EventSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
+
+#event detail view
+class EventDetailView(APIView):
     """
-    View for retrieving, updating and deleting a specific event
+    View for retrieving a specific event
     """
-    queryset = Event.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
 
-    def get_serializer_class(self):
-        if self.request.method in ['PUT', 'PATCH']:
-            return EventUpdateSerializer
-        return EventSerializer
-
-    def get_queryset(self):
-        queryset = Event.objects.filter(is_deleted=False).select_related('assigned_employee', 'created_by')
-        
-        # Filter based on user role
-        user = self.request.user
-        if not user.is_superuser and user.role not in ['superuser', 'admin']:
-            queryset = queryset.filter(assigned_employee=user)
+    def get_object(self, id):
+        """Helper to get the event and enforce accessibility rules"""
+        try:
+            event = Event.objects.get(id=id, is_deleted=False)
             
-        return queryset
+            # Filter based on user role - Employees see only their assigned events
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['superuser', 'admin', 'director', 'managing_director']:
+                if event.assigned_employee != user:
+                    return None
+            
+            return event
+        except Event.DoesNotExist:
+            return None
+
+    def get(self, request, id):
+        """Retrieve event details"""
+        event = self.get_object(id)
+        if not event:
+            return Response(
+                {"error": "Event not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = EventSerializer(event)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+#event update view
+class EventUpdateView(APIView):
+    """
+    View for updating a specific event
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, id):
+        """Helper to get the event and enforce accessibility rules"""
+        try:
+            event = Event.objects.get(id=id, is_deleted=False)
+            
+            # Filter based on user role
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['director', 'managing_director']:
+                if event.assigned_employee != user:
+                    return None
+            
+            return event
+        except Event.DoesNotExist:
+            return None
+
+    def put(self, request, id):
+        """Full update of an event"""
+        event = self.get_object(id)
+        if not event:
+            return Response(
+                {"error": "Event not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        serializer = EventUpdateSerializer(event, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Event updated successfully"},
+                
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, id):
+        """Partial update of an event"""
+        event = self.get_object(id)
+        if not event:
+            return Response(
+                {"error": "Event not found or access denied."},
+                
+            )
+            
+        serializer = EventUpdateSerializer(event, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Event updated successfully"},
+               
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
 class EventStatusUpdateView(generics.UpdateAPIView):
@@ -346,6 +431,40 @@ class EmployeeEventsView(generics.ListAPIView):
         
         return queryset.select_related('assigned_employee', 'created_by')
 
+
+
+
+
+class EventSoftDeleteView(generics.DestroyAPIView):
+    """
+    View for soft deleting a specific event
+    """
+    queryset = Event.objects.filter(is_deleted=False)
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        queryset = Event.objects.filter(is_deleted=False)
+        # Filter based on user role to prevent unauthorized deletion
+        user = self.request.user
+        if not user.is_superuser and user.role not in ['superuser', 'admin']:
+            queryset = queryset.filter(assigned_employee=user)
+        return queryset
+    
+    def perform_destroy(self, instance):
+        """Perform soft delete"""
+        instance.soft_delete(user=self.request.user)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(
+            {
+                "message": "Event deleted successfully!"
+            },
+            status=status.HTTP_200_OK
+        )
+        
 class CalendarEventsView(generics.ListAPIView):
     """
     View for listing events for calendar display with date range filtering
@@ -390,33 +509,4 @@ class CalendarEventsView(generics.ListAPIView):
         return queryset.select_related('assigned_employee', 'created_by')
 
 
-class EventSoftDeleteView(generics.DestroyAPIView):
-    """
-    View for soft deleting a specific event
-    """
-    queryset = Event.objects.filter(is_deleted=False)
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
-
-    def get_queryset(self):
-        queryset = Event.objects.filter(is_deleted=False)
-        # Filter based on user role to prevent unauthorized deletion
-        user = self.request.user
-        if not user.is_superuser and user.role not in ['superuser', 'admin']:
-            queryset = queryset.filter(assigned_employee=user)
-        return queryset
-    
-    def perform_destroy(self, instance):
-        """Perform soft delete"""
-        instance.soft_delete(user=self.request.user)
-    
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return Response(
-            {
-                "message": "Event deleted successfully!"
-            },
-            status=status.HTTP_200_OK
-        )
     

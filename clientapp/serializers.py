@@ -2,6 +2,9 @@
 from rest_framework import serializers
 from .models import Client, ClientDocument
 
+
+
+#client serializer
 class ClientSerializer(serializers.ModelSerializer):
     total_content_per_month = serializers.ReadOnlyField()
     is_active_client = serializers.ReadOnlyField()
@@ -157,6 +160,183 @@ class ClientSerializer(serializers.ModelSerializer):
         
         return instance
 
+
+#client document serializer
+class ClientDocumentSerializer(serializers.ModelSerializer):
+    
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
+    
+    class Meta:
+        model = ClientDocument
+        fields = [
+            'id', 'document_type', 'file', 'client_name', 
+        ]
+        
+        
+
+#client detail serializer
+class ClientDetailSerializer(serializers.ModelSerializer):
+    """Full serializer for client details including all fields and properties"""
+    total_content_per_month = serializers.ReadOnlyField()
+    is_active_client = serializers.ReadOnlyField()
+    contract_duration = serializers.ReadOnlyField()
+    is_payment_overdue = serializers.ReadOnlyField()
+    days_until_next_payment = serializers.ReadOnlyField()
+    payment_status_display = serializers.ReadOnlyField()
+    is_early_payment = serializers.ReadOnlyField()
+    early_payment_days = serializers.ReadOnlyField()
+    documents = ClientDocumentSerializer(many=True, read_only=True)
+    
+    
+    class Meta:
+        model = Client
+        fields = [
+            'id','client_name','client_type','industry',
+            'owner_name','contact_person_name','contact_email',
+            'contact_phone','instagram_id','facebook_id',
+            'youtube_channel','google_my_business','linkedin_url',
+            'twitter_handle','videos_per_month','posters_per_month',
+            'reels_per_month','stories_per_month','status',
+            'contract_start_date','contract_end_date','payment_cycle',
+            'payment_date','monthly_retainer','address','city','state',
+            'country','postal_code','website',
+            'business_registration_number','tax_id','description',
+            'next_payment_date',
+            'total_content_per_month',
+            'is_active_client','contract_duration',
+            'is_payment_overdue','days_until_next_payment',
+            'payment_status_display','is_early_payment',
+            'early_payment_days','documents']
+       
+
+#client update serializer
+class ClientUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating client details"""
+    class Meta:
+        model = Client
+        fields = [
+            'client_name',
+            'client_type',
+            'industry',
+            'owner_name',
+            'contact_person_name',
+            'contact_email',
+            'contact_phone',
+            'instagram_id',
+            'facebook_id',
+            'youtube_channel',
+            'google_my_business',
+            'linkedin_url',
+            'twitter_handle',
+            'videos_per_month',
+            'posters_per_month',
+            'reels_per_month',
+            'stories_per_month',
+            'status',
+            'contract_start_date',
+            'contract_end_date',
+            'payment_cycle',
+            'payment_date',
+            'monthly_retainer',
+            'address',
+            'city',
+            'state',
+            'country',
+            'postal_code',
+            'website',
+            'business_registration_number',
+            'tax_id',
+            'description',
+        ]
+
+    def validate_client_name(self, value):
+        """Ensure client name is unique"""
+        queryset = Client.objects.filter(client_name=value)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("A client with this name already exists.")
+        return value
+
+    def validate(self, data):
+        """Validate contract dates and payment data"""
+        contract_start_date = data.get('contract_start_date')
+        contract_end_date = data.get('contract_end_date')
+        payment_date = data.get('payment_date')
+        
+        if contract_start_date and contract_end_date:
+            if contract_end_date <= contract_start_date:
+                raise serializers.ValidationError({
+                    "contract_end_date": "Contract end date must be after start date."
+                })
+        
+        if payment_date is not None:
+            if payment_date < 1 or payment_date > 31:
+                raise serializers.ValidationError({
+                    "payment_date": "Payment date must be between 1 and 31."
+                })
+        
+        monthly_retainer = data.get('monthly_retainer')
+        if monthly_retainer is not None and monthly_retainer < 0:
+            raise serializers.ValidationError({
+                "monthly_retainer": "Monthly retainer cannot be negative."
+            })
+        
+        return data
+
+    def update(self, instance, validated_data):
+        """Override update to handle automatic next_payment_date calculation"""
+        original_payment_date = instance.payment_date
+        original_payment_cycle = instance.payment_cycle
+        
+        instance = super().update(instance, validated_data)
+        
+        if (validated_data.get('payment_date') != original_payment_date or 
+            validated_data.get('payment_cycle') != original_payment_cycle):
+            instance.calculate_next_payment_date()
+            instance.save()
+        
+        return instance
+
+#client list serializer
+class ClientListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for client lists"""
+    total_content_per_month = serializers.ReadOnlyField()
+    is_active_client = serializers.ReadOnlyField()
+    payment_status_display = serializers.ReadOnlyField()
+    is_payment_overdue = serializers.ReadOnlyField()
+    is_early_payment = serializers.ReadOnlyField()
+    payment_timing_display = serializers.CharField(source='get_payment_timing_display', read_only=True)
+    
+    class Meta:
+        model = Client
+        fields = [
+            'id',
+            'client_name',
+            'client_type',
+            'industry',
+            'contact_person_name',
+            'contact_email',
+            'contact_phone',
+            'status',
+            'monthly_retainer',
+            'payment_cycle',
+            'next_payment_date',
+            'current_month_payment_status',
+            'payment_timing',
+            'payment_timing_display',
+            'early_payment_date',
+            'total_content_per_month',
+            'is_active_client',
+            'payment_status_display',
+            'is_payment_overdue',
+            'is_early_payment',
+            'created_at',
+        ]
+
+
+
+
 class ClientPaymentStatusUpdateSerializer(serializers.Serializer):
     """Serializer for updating payment status"""
     payment_status = serializers.ChoiceField(
@@ -244,49 +424,7 @@ class ClientEarlyPaymentSerializer(serializers.Serializer):
         )
         return instance
 
-class ClientDocumentSerializer(serializers.ModelSerializer):
-    uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
-    client_name = serializers.CharField(source='client.client_name', read_only=True)
-    
-    class Meta:
-        model = ClientDocument
-        fields = '__all__'
-        read_only_fields = ['uploaded_at', 'uploaded_by']
 
-class ClientListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for client lists"""
-    total_content_per_month = serializers.ReadOnlyField()
-    is_active_client = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
-    is_payment_overdue = serializers.ReadOnlyField()
-    is_early_payment = serializers.ReadOnlyField()
-    payment_timing_display = serializers.CharField(source='get_payment_timing_display', read_only=True)
-    
-    class Meta:
-        model = Client
-        fields = [
-            'id',
-            'client_name',
-            'client_type',
-            'industry',
-            'contact_person_name',
-            'contact_email',
-            'contact_phone',
-            'status',
-            'monthly_retainer',
-            'payment_cycle',
-            'next_payment_date',
-            'current_month_payment_status',
-            'payment_timing',
-            'payment_timing_display',
-            'early_payment_date',
-            'total_content_per_month',
-            'is_active_client',
-            'payment_status_display',
-            'is_payment_overdue',
-            'is_early_payment',
-            'created_at',
-        ]
 
 class ClientStatsSerializer(serializers.Serializer):
     """Serializer for client statistics"""
