@@ -4,15 +4,17 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db import models
 from django.utils import timezone
 from .models import Event
+from rest_framework.views import APIView
 from .serializers import (
-    EventSerializer, 
+    EventDetailSerializer,
+    EventListSerializer,
     EventCreateSerializer, 
     EventUpdateSerializer, 
     EventStatusUpdateSerializer
 )
-from rest_framework.views import APIView
 
 
+ 
 
 # event create view
 class EventCreateView(APIView):
@@ -121,9 +123,8 @@ class EventListView(APIView):
         queryset = queryset.order_by(ordering).select_related('assigned_employee', 'created_by')
 
         # Serialization
-        serializer = EventSerializer(queryset, many=True)
+        serializer = EventListSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 #event detail view
 class EventDetailView(APIView):
@@ -156,7 +157,7 @@ class EventDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        serializer = EventSerializer(event)
+        serializer = EventDetailSerializer(event)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 #event update view
@@ -216,7 +217,56 @@ class EventUpdateView(APIView):
                
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# event delete view
+class EventDeleteView(APIView):
+    """
+    View for soft deleting a specific event
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, id):
+        """Helper to get the event and enforce accessibility rules"""
+        try:
+            event = Event.objects.get(id=id, is_deleted=False)
+            
+            # Filter based on user role to prevent unauthorized deletion
+            user = self.request.user
+            if not user.is_superuser and user.role not in ['superuser', 'admin']:
+                if event.assigned_employee != user:
+                    return None
+            
+            return event
+        except Event.DoesNotExist:
+            return None
     
+    def delete(self, request, id):
+        """Perform soft delete"""
+        event = self.get_object(id)
+        if not event:
+            return Response(
+                {"error": "Event not found or access denied."},
+                
+            )
+            
+        event.soft_delete(user=request.user)
+        return Response(
+            {
+                "message": "Event deleted successfully!"
+            },
+            status=status.HTTP_200_OK
+        )
+        
+    
+
+
+
+
+
+
+
+
+
 
 class EventStatusUpdateView(generics.UpdateAPIView):
     """
@@ -316,7 +366,7 @@ class MyEventsView(generics.ListAPIView):
     """
     View for listing events assigned to the current user
     """
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description', 'location']
@@ -358,7 +408,7 @@ class EventsCreatedByMeView(generics.ListAPIView):
     """
     View for listing events created by the current user
     """
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description', 'assigned_employee__first_name', 'assigned_employee__last_name', 'location']
@@ -392,7 +442,7 @@ class EmployeeEventsView(generics.ListAPIView):
     """
     View for listing events for a specific employee
     """
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['name', 'description', 'location']
@@ -431,45 +481,11 @@ class EmployeeEventsView(generics.ListAPIView):
         
         return queryset.select_related('assigned_employee', 'created_by')
 
-
-
-
-
-class EventSoftDeleteView(generics.DestroyAPIView):
-    """
-    View for soft deleting a specific event
-    """
-    queryset = Event.objects.filter(is_deleted=False)
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
-
-    def get_queryset(self):
-        queryset = Event.objects.filter(is_deleted=False)
-        # Filter based on user role to prevent unauthorized deletion
-        user = self.request.user
-        if not user.is_superuser and user.role not in ['superuser', 'admin']:
-            queryset = queryset.filter(assigned_employee=user)
-        return queryset
-    
-    def perform_destroy(self, instance):
-        """Perform soft delete"""
-        instance.soft_delete(user=self.request.user)
-    
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return Response(
-            {
-                "message": "Event deleted successfully!"
-            },
-            status=status.HTTP_200_OK
-        )
-        
 class CalendarEventsView(generics.ListAPIView):
     """
     View for listing events for calendar display with date range filtering
     """
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
