@@ -6,7 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser  # Ad
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory, CameraDepartment
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
@@ -17,7 +17,10 @@ from .serializers import (
     EmployeeMediaSerializer,
     LeaveRecordSerializer,
     SalaryHistorySerializer,
-    EmployeeListSerializer
+    EmployeeListSerializer,
+    CameraDepartmentListSerializer,
+    CameraDepartmentCreateSerializer,
+    CameraDepartmentDetailSerializer
 )
 
 # login view 
@@ -403,6 +406,95 @@ class EmployeeMediaListCreateView(APIView):
             'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+#camera department list view
+class CameraDepartmentListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Permission check for listing
+        if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
+            'camera_department', 'hr', 'manager', 'content_creator', 'editor'
+        ]:
+            return Response(
+                {'error': 'You do not have permission to view camera department projects'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        projects = CameraDepartment.objects.all().select_related('client')
+        
+        # Filter by client if provided
+        client_id = request.GET.get('client')
+        if client_id:
+            projects = projects.filter(client_id=client_id)
+            
+        serializer = CameraDepartmentListSerializer(projects, many=True)
+        return Response(serializer.data)
+
+
+
+#camera department create view
+class CameraDepartmentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Permission check for creation
+        if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
+            'camera_department', 'content_creator', 'manager', 'hr'
+        ]:
+            return Response(
+                {'error': 'You do not have permission to create camera department projects'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        serializer = CameraDepartmentCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response("project created successfully", status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+#camera department detail view
+class CameraDepartmentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return CameraDepartment.objects.get(pk=pk)
+        except CameraDepartment.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        project = self.get_object(pk)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = CameraDepartmentDetailSerializer(project)
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        project = self.get_object(pk)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Permission check for update
+        if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
+            'camera_department', 'content_creator', 'manager', 'hr'
+        ]:
+            return Response(
+                {'error': 'You do not have permission to update camera department projects'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = CameraDepartmentCreateSerializer(project, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     
 
 

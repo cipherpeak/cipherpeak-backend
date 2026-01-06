@@ -10,7 +10,7 @@ urlpatterns = [
     path('update-task/<int:id>/', views.TaskUpdateView.as_view(), name='task-update'),
 
     #list task
-    path('task-list/', views.TaskListView.as_view(), name="task-list"),
+    path('tasks/', views.TaskListView.as_view(), name="task-list"),
 
     #detail task
     path('task_details/<int:id>/',views.TaskDetailView.as_view(),name="tak-detail"),

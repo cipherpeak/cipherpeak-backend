@@ -31,6 +31,11 @@ urlpatterns = [
 
     # JWT Token Refresh
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Camera Department
+    path('camera-department/', views.CameraDepartmentListView.as_view(), name='camera_department_list'),
+    path('camera-department/create/', views.CameraDepartmentCreateView.as_view(), name='camera_department_create'),
+    path('camera-department/<int:pk>/', views.CameraDepartmentDetailView.as_view(), name='camera_department_detail'),
 ]
 
 

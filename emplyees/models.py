@@ -11,6 +11,17 @@ class CustomUser(AbstractUser):
         ('admin', 'Admin'),
         ('employee', 'Employee'),
     ]
+
+    # User Type Choices (Specific roles for employees)
+    USER_TYPE_CHOICES = [
+        ('developer', 'Developer'),
+        ('camera_department', 'Camera Department'),
+        ('editor', 'Editor'),
+        ('marketer', 'Marketer'),
+        ('hr', 'HR'),
+        ('manager', 'Manager'),
+        ('content_creator', 'Content Creator'),
+    ]
     
     # Status Choices
     STATUS_CHOICES = [
@@ -32,6 +43,14 @@ class CustomUser(AbstractUser):
         max_length=20, 
         choices=ROLE_CHOICES, 
         default='employee'
+    )
+
+    user_type = models.CharField(
+        max_length=50,
+        choices=USER_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        help_text='Specific role type for the employee'
     )
     
     salary = models.DecimalField(
@@ -198,6 +217,7 @@ class LeaveRecord(models.Model):
         return f"{self.user.username} - {self.leave_type} - {self.start_date} to {self.end_date}"
 
 class SalaryHistory(models.Model):
+
     user = models.ForeignKey(
         CustomUser, 
         on_delete=models.CASCADE, 
@@ -222,3 +242,39 @@ class SalaryHistory(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.salary} - from {self.effective_from}"
+
+class CameraDepartment(models.Model):
+    PRIORITY_CHOICES = [
+        ('high', 'High'),
+        ('medium', 'Medium'),
+        ('low', 'Low'),
+        ('urgent', 'Urgent'),
+    ]
+
+    client = models.ForeignKey(
+        'clientapp.Client',
+        on_delete=models.CASCADE,
+        related_name='camera_department_projects'
+    )
+    uploaded_date = models.DateField(default=timezone.now)
+    priority = models.CharField(
+        max_length=20, 
+        choices=PRIORITY_CHOICES, 
+        default='medium' 
+    )
+    link = models.URLField(
+        blank=True, 
+        null=True, 
+        
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Camera Department Project'
+        verbose_name_plural = 'Camera Department Projects'
+        ordering = ['-uploaded_date']
+
+    def __str__(self):
+        return f"{self.client.client_name} - Project ({self.uploaded_date})"

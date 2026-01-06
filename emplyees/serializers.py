@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory, CameraDepartment
 from django.contrib.auth import authenticate
 
 
@@ -292,6 +292,39 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.profile_image.url)
             return obj.profile_image.url
         return None
+
+# camera department list serializer
+class CameraDepartmentListSerializer(serializers.ModelSerializer):
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
+    
+    class Meta:
+        model = CameraDepartment
+        fields = [
+            'id', 'client', 'client_name', 'uploaded_date', 'priority','link'
+        ]
+
+
+#camera department create serializer
+class CameraDepartmentCreateSerializer(serializers.ModelSerializer):
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
+
+    class Meta:
+        model = CameraDepartment
+        fields = [
+            'client', 'client_name', 'uploaded_date', 'priority', 'link'
+        ]
+
+
+#camera department detail serializer
+class CameraDepartmentDetailSerializer(serializers.ModelSerializer):
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
+    
+    class Meta:
+        model = CameraDepartment
+        fields = [
+            'id', 'client', 'client_name',  
+            'uploaded_date', 'priority', 'link'
+        ]
 
 
 
