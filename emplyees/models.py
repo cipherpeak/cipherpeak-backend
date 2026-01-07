@@ -60,6 +60,11 @@ class CustomUser(AbstractUser):
         null=True,
         validators=[MinValueValidator(0)]
     )
+    salary_payment=models.BooleanField(
+        default=False,
+        help_text='Has the employee been paid their salary?'
+        )
+
     
     current_status = models.CharField(
         max_length=20, 
@@ -183,24 +188,17 @@ class SalaryHistory(models.Model):
         related_name='salary_history'
     )
     salary = models.DecimalField(max_digits=12, decimal_places=2)
-    effective_from = models.DateField()
-    effective_to = models.DateField(null=True, blank=True)
+    incentive = models.DecimalField(max_digits=12, decimal_places=2)
     reason = models.CharField(max_length=200, blank=True, null=True)
-    changed_by = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.SET_NULL, 
-        null=True,
-        related_name='salary_changes'
-    )
-    changed_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True,blank=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,blank=True,null=True)
     
     class Meta:
         verbose_name = 'Salary History'
         verbose_name_plural = 'Salary History'
-        ordering = ['-effective_from']
     
     def __str__(self):
-        return f"{self.user.username} - {self.salary} - from {self.effective_from}"
+        return f"{self.user.username} - {self.salary}"
 
 class CameraDepartment(models.Model):
     PRIORITY_CHOICES = [
@@ -360,45 +358,3 @@ class LeaveManagement(models.Model):
 
 
 
-
-
-# class LeaveRecord(models.Model):
-#     LEAVE_TYPES = [
-#         ('sick', 'Sick Leave'),
-#         ('casual', 'Casual Leave'),
-#         ('earned', 'Earned Leave'),
-#         ('maternity', 'Maternity Leave'),
-#         ('paternity', 'Paternity Leave'),
-#         ('bereavement', 'Bereavement Leave'),
-#         ('other', 'Other Leave'),
-#     ]
-    
-#     STATUS_CHOICES = [
-#         ('pending', 'Pending'),
-#         ('approved', 'Approved'),
-#         ('rejected', 'Rejected'),
-#         ('cancelled', 'Cancelled'),
-#     ]
-    
-#     user = models.ForeignKey(
-#         CustomUser, 
-#         on_delete=models.CASCADE, 
-#         related_name='leave_records'
-#     )
-#     leave_type = models.CharField(max_length=20, choices=LEAVE_TYPES)
-#     start_date = models.DateField()
-#     end_date = models.DateField()
-#     reason = models.TextField()
-#     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-#     applied_on = models.DateTimeField(auto_now_add=True)
-#     approved_by = models.ForeignKey(
-#         CustomUser, 
-#         on_delete=models.SET_NULL, 
-#         null=True, 
-#         blank=True,
-#         related_name='approved_leaves'
-#     )
-#     approved_on = models.DateTimeField(null=True, blank=True)
-    
-#     def __str__(self):
-#         return f"{self.user.username} - {self.leave_type} - {self.start_date} to {self.end_date}"

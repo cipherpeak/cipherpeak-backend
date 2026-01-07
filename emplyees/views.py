@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser  # Ad
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
+from django.utils import timezone
 from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
 from rest_framework.views import APIView
 from .serializers import (
@@ -265,8 +266,8 @@ class EmployeeDetailView(APIView):
         employee = CustomUser.objects.filter(id=employee.id).prefetch_related(
             Prefetch('documents', queryset=EmployeeDocument.objects.all()),
             Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
-            Prefetch('leave_records', queryset=LeaveRecord.objects.all().order_by('-start_date')),
-            Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-effective_from'))
+            Prefetch('leaves', queryset=LeaveManagement.objects.all().order_by('-start_date')),
+            Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-created_at'))
         ).first()
         
         serializer = EmployeeDetailSerializer(employee, context={'request': request})
@@ -564,3 +565,42 @@ class LeaveDetailView(APIView):
 
         serializer = LeaveDetailSerializer(leave)
         return Response(serializer.data)
+
+
+class SalaryHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        salary_history = SalaryHistory.objects.filter(employee=user)
+        serializer = SalaryHistorySerializer(salary_history, many=True)
+        return Response(serializer.data)
+    
+
+class ProcessSalaryPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            employee = CustomUser.objects.get(pk=pk)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if salary already paid for this month
+        now = timezone.now()
+        if SalaryHistory.objects.filter(
+            user=employee, 
+            created_at__year=now.year, 
+            created_at__month=now.month
+        ).exists():
+             return Response({'message': 'Salary already paid for this month'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create salary history record
+        SalaryHistory.objects.create(
+            user=employee,
+            salary=employee.salary if employee.salary else 0,
+            incentive=request.data.get('incentive', 0),
+            reason="Monthly Salary Payment",
+        )
+        
+        return Response({'message': 'Salary processed successfully'})

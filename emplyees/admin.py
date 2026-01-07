@@ -7,4 +7,5 @@ from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement
 admin.site.register(CustomUser)
 admin.site.register(CameraDepartment)
 admin.site.register(LeaveManagement)
+admin.site.register(SalaryHistory)
 

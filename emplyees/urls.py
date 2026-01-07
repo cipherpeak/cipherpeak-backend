@@ -41,6 +41,10 @@ urlpatterns = [
     path('leaves/', views.LeaveListView.as_view(), name='leave-list'),
     path('leaves/create/', views.LeaveCreateView.as_view(), name='leave-create'),
     path('leaves/<int:pk>/', views.LeaveDetailView.as_view(), name='leave-detail'),
+
+
+    path('salary-history/', views.SalaryHistoryView.as_view(), name='salary-history'),
+    path('process-salary-payment/<int:pk>/', views.ProcessSalaryPaymentView.as_view(), name='process-salary-payment'),
 ]
 
 

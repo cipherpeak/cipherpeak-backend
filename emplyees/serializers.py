@@ -261,37 +261,74 @@ class LeaveListSerializer(serializers.ModelSerializer):
 
 #salary history serializer
 class SalaryHistorySerializer(serializers.ModelSerializer):
-    changed_by_name = serializers.CharField(source='changed_by.get_full_name', read_only=True)
-    
     class Meta:
         model = SalaryHistory
         fields = [
-            'id', 'salary', 'effective_from', 'effective_to',
-            'reason', 'changed_by', 'changed_by_name', 'changed_at'
+            'id', 'salary', 'incentive',
+            'reason', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['changed_at']
+        read_only_fields = ['created_at', 'updated_at']
 
 
 #employee detail serializer
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
     media_files = EmployeeMediaSerializer(many=True, read_only=True)
-    leave_records = LeaveListSerializer(many=True, read_only=True)
+    leave_records = LeaveListSerializer(source='leaves', many=True, read_only=True)
     salary_history = SalaryHistorySerializer(many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
+    payment_status = serializers.SerializerMethodField()
     
     class Meta:
         model = CustomUser
         fields = [
             'id','email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'role', 'salary', 'current_status', 'joining_date',
+            'phone_number', 'role', 'salary', 'salary_payment', 'payment_status', 'current_status', 'joining_date',
             'employee_id', 'department', 'designation', 'profile_image', 
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
             'documents', 'media_files', 'leave_records', 'salary_history',    
         ]
+    
+    def get_payment_status(self, obj):
+        from django.utils import timezone
+        import calendar
+        
+        today = timezone.now().date()
+        
+        # Check if salary history exists for current month and year
+        has_paid = obj.salary_history.filter(
+            created_at__year=today.year, 
+            created_at__month=today.month
+        ).exists()
+        
+        if has_paid:
+            return "Paid"
+            
+        today = timezone.now().date()
+        if not obj.joining_date:
+            return "Unknown"
+            
+        joining_day = obj.joining_date.day
+        
+        # Calculate payment due date for current month
+        try:
+            payment_due_date = today.replace(day=joining_day)
+        except ValueError:
+            # Handle shorter months
+            last_day = calendar.monthrange(today.year, today.month)[1]
+            payment_due_date = today.replace(day=last_day)
+            
+        days_diff = (payment_due_date - today).days
+        
+        if days_diff <= 0:
+            return "Payment Due" # Date passed for this month or is today
+        elif days_diff <= 5:
+            return "Payment date reaching soon"
+        else:
+            return "Pending"
     
     def get_profile_image_url(self, obj):
         """Get the full URL for the profile image"""
