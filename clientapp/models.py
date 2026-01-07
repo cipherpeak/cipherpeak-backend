@@ -1,15 +1,8 @@
-# client/models.py
 from django.db import models
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import date, timedelta
 import calendar
-
-from django.db import models
-from django.core.validators import MinValueValidator
-from django.utils import timezone
-import calendar
-from datetime import date
 
 class Client(models.Model):
     # Client Type Choices
@@ -124,7 +117,7 @@ class Client(models.Model):
     )
     payment_date = models.PositiveIntegerField(
         default=1,
-        validators=[MinValueValidator(1), MinValueValidator(31)],
+        validators=[MinValueValidator(1), MaxValueValidator(31)],
         verbose_name="Payment Date (Day of Month)",
         help_text="Enter the day of month (1-31) when payment is due"
     )

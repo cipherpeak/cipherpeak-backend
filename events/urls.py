@@ -4,17 +4,25 @@ from . import views
 
 urlpatterns = [
     #create event
-    path('events/', views.EventListCreateView.as_view(), name='event-list-create'),
+    path('event_create/', views.EventCreateView.as_view(), name='event-create'),
     
     #update event
-    path('events/<int:id>/update/', views.EventDetailView.as_view(), name='event-update'),
+    path('events/<int:id>/update/', views.EventUpdateView.as_view(), name='event-update'),
 
-    #get event
+    #event detail
     path('events/<int:id>/',views.EventDetailView.as_view(),name='event-detail'),
 
     #event list
-    path('events/event_list/',views.EventListCreateView.as_view(),name='event-list'),
+    path('events/', views.EventListView.as_view(), name='event-list'),
     
+    #delete event
+    path('events/<int:id>/delete/', views.EventDeleteView.as_view(), name='event-delete'),
+
+
+
+
+
+
     path('events/<int:id>/status/', views.EventStatusUpdateView.as_view(), name='event-status-update'),
     path('events/stats/', views.EventStatsView.as_view(), name='event-stats'),
     path('events/my-events/', views.MyEventsView.as_view(), name='my-events'),
@@ -22,6 +30,5 @@ urlpatterns = [
     path('events/employee/<int:employee_id>/', views.EmployeeEventsView.as_view(), name='employee-events'),
     path('events/calendar/', views.CalendarEventsView.as_view(), name='calendar-events'),
 
-    #delete event
-    path('events/<int:id>/delete/', views.EventSoftDeleteView.as_view(), name='event-delete'),
+    
 ]

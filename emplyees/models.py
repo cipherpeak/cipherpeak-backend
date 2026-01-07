@@ -11,6 +11,17 @@ class CustomUser(AbstractUser):
         ('admin', 'Admin'),
         ('employee', 'Employee'),
     ]
+
+    # User Type Choices (Specific roles for employees)
+    USER_TYPE_CHOICES = [
+        ('developer', 'Developer'),
+        ('camera_department', 'Camera Department'),
+        ('editor', 'Editor'),
+        ('marketer', 'Marketer'),
+        ('hr', 'HR'),
+        ('manager', 'Manager'),
+        ('content_creator', 'Content Creator'),
+    ]
     
     # Status Choices
     STATUS_CHOICES = [
@@ -33,6 +44,14 @@ class CustomUser(AbstractUser):
         choices=ROLE_CHOICES, 
         default='employee'
     )
+
+    user_type = models.CharField(
+        max_length=50,
+        choices=USER_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        help_text='Specific role type for the employee'
+    )
     
     salary = models.DecimalField(
         max_digits=12, 
@@ -41,6 +60,11 @@ class CustomUser(AbstractUser):
         null=True,
         validators=[MinValueValidator(0)]
     )
+    salary_payment=models.BooleanField(
+        default=False,
+        help_text='Has the employee been paid their salary?'
+        )
+
     
     current_status = models.CharField(
         max_length=20, 
@@ -118,8 +142,7 @@ class EmployeeDocument(models.Model):
         upload_to='employee_documents/%Y/%m/%d/',
         max_length=500
     )
-    title = models.CharField(max_length=200,blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
+    
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
     
@@ -147,8 +170,7 @@ class EmployeeMedia(models.Model):
         upload_to='employee_media/%Y/%m/%d/',
         max_length=500
     )
-    title = models.CharField(max_length=200,blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
+    
     uploaded_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -158,15 +180,81 @@ class EmployeeMedia(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.get_media_type_display()} - {self.title}"
 
-class LeaveRecord(models.Model):
-    LEAVE_TYPES = [
+class SalaryHistory(models.Model):
+
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='salary_history'
+    )
+    salary = models.DecimalField(max_digits=12, decimal_places=2)
+    incentive = models.DecimalField(max_digits=12, decimal_places=2)
+    reason = models.CharField(max_length=200, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True,blank=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,blank=True,null=True)
+    
+    class Meta:
+        verbose_name = 'Salary History'
+        verbose_name_plural = 'Salary History'
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.salary}"
+
+class CameraDepartment(models.Model):
+    PRIORITY_CHOICES = [
+        ('high', 'High'),
+        ('medium', 'Medium'),
+        ('low', 'Low'),
+        ('urgent', 'Urgent'),
+    ]
+    employee = models.ForeignKey(
+        CustomUser,  
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name='camera_department_projects'
+    )
+    client = models.ForeignKey(
+        'clientapp.Client',
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name='camera_department_projects'
+    )
+    uploaded_date = models.DateField(default=timezone.now)
+    priority = models.CharField(
+        max_length=20, 
+        choices=PRIORITY_CHOICES, 
+        default='medium' 
+    )
+    link = models.URLField(
+        blank=True, 
+        null=True, 
+        
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Camera Department Project'
+        verbose_name_plural = 'Camera Department Projects'
+        ordering = ['-uploaded_date']
+
+    def __str__(self):
+        return f"{self.client.client_name} - Project ({self.uploaded_date})"
+
+class LeaveManagement(models.Model):
+
+    LEAVE_CATEGORY_CHOICES = [
+        ('annual', 'Annual Leave'),
         ('sick', 'Sick Leave'),
         ('casual', 'Casual Leave'),
-        ('earned', 'Earned Leave'),
+        ('emergency', 'Emergency Leave'),
         ('maternity', 'Maternity Leave'),
         ('paternity', 'Paternity Leave'),
-        ('bereavement', 'Bereavement Leave'),
-        ('other', 'Other Leave'),
+        ('unpaid', 'Unpaid Leave'),
+        ('other', 'Other'),
     ]
     
     STATUS_CHOICES = [
@@ -175,52 +263,98 @@ class LeaveRecord(models.Model):
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
     ]
-    
-    user = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.CASCADE, 
-        related_name='leave_records'
-    )
-    leave_type = models.CharField(max_length=20, choices=LEAVE_TYPES)
-    start_date = models.DateField()
-    end_date = models.DateField()
-    reason = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    applied_on = models.DateTimeField(auto_now_add=True)
-    approved_by = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        related_name='approved_leaves'
-    )
-    approved_on = models.DateTimeField(null=True, blank=True)
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.leave_type} - {self.start_date} to {self.end_date}"
 
-class SalaryHistory(models.Model):
-    user = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.CASCADE, 
-        related_name='salary_history'
-    )
-    salary = models.DecimalField(max_digits=12, decimal_places=2)
-    effective_from = models.DateField()
-    effective_to = models.DateField(null=True, blank=True)
-    reason = models.CharField(max_length=200, blank=True, null=True)
-    changed_by = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.SET_NULL, 
+
+    employee = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        blank=True,
         null=True,
-        related_name='salary_changes'
+        related_name='leaves'
     )
-    changed_at = models.DateTimeField(auto_now_add=True)
+    
+    # Basic leave information
+    category = models.CharField(
+        max_length=20,
+        choices=LEAVE_CATEGORY_CHOICES,
+        verbose_name="Category of Leave"
+    ) 
+    
+    start_date = models.CharField(max_length=100)  
+    
+    end_date = models.CharField(max_length=100)  
+    
+    total_days = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        validators=[MinValueValidator(0.5)],
+        verbose_name="Total Number of Leave Days"
+    )
+    
+    reason = models.TextField(
+        verbose_name="Reason for the Leave",
+        blank=True,
+        null=True
+    )
+    
+    
+    address_during_leave = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Address During the Leave"
+    )
+    
+   
+    # Attachments
+    attachment = models.FileField(
+        upload_to='leave_attachments/',
+        blank=True,
+        null=True,
+        verbose_name="Attach Media"
+    )
+
+    # Status and approval
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending'
+    )
+    
+    approved_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='approved_leave_applications',
+        limit_choices_to={'role': 'manager'}
+    )
+    
+    approved_at = models.DateTimeField(
+        blank=True,
+        null=True
+    )
+    
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        verbose_name = 'Salary History'
-        verbose_name_plural = 'Salary History'
-        ordering = ['-effective_from']
+        ordering = ['-created_at']
+        verbose_name = "Leave Application"
+        verbose_name_plural = "Leave Applications"
     
     def __str__(self):
-        return f"{self.user.username} - {self.salary} - from {self.effective_from}"
+        return f"{self.employee.employee_id} - {self.category} ({self.start_date} to {self.end_date})"
+
+
+
+
+
+
+
+
