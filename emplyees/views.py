@@ -6,7 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser  # Ad
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
@@ -15,12 +15,14 @@ from .serializers import (
     EmployeeDetailSerializer,
     EmployeeDocumentSerializer, 
     EmployeeMediaSerializer,
-    LeaveRecordSerializer,
     SalaryHistorySerializer,
     EmployeeListSerializer,
     CameraDepartmentListSerializer,
     CameraDepartmentCreateSerializer,
-    CameraDepartmentDetailSerializer
+    CameraDepartmentDetailSerializer,
+    LeaveCreateSerializer,
+    LeaveListSerializer,
+    LeaveDetailSerializer,
 )
 
 # login view 
@@ -412,7 +414,7 @@ class EmployeeMediaListCreateView(APIView):
 #camera department list view
 class CameraDepartmentListView(APIView):
     permission_classes = [IsAuthenticated]
-
+    
     def get(self, request):
         # Permission check for listing
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
@@ -451,7 +453,7 @@ class CameraDepartmentCreateView(APIView):
             
         serializer = CameraDepartmentCreateSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(employee=request.user)
             return Response("project created successfully", status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -495,8 +497,70 @@ class CameraDepartmentDetailView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    
+
+#Leave create view 
+class LeaveCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        serializer = LeaveCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save(employee=request.user)
+            return Response(
+                {'message': 'Leave applied successfully'},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+#Leave list view
+class LeaveListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        if user.role in ['manager', 'hr', 'admin', 'director']:
+            leaves = LeaveManagement.objects.select_related(
+                'employee', 'approved_by'
+            )
+        else:
+            leaves = LeaveManagement.objects.filter(
+                employee=user
+            ).select_related('approved_by')
+
+        serializer = LeaveListSerializer(leaves, many=True)
+        return Response(serializer.data)
 
 
+#Leave detail view
+class LeaveDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            leave = LeaveManagement.objects.select_related(
+                'employee', 'approved_by'
+            ).get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Permission check
+        if (
+            request.user != leave.employee and
+            request.user.role not in ['manager', 'hr', 'admin', 'director']
+        ):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = LeaveDetailSerializer(leave)
+        return Response(serializer.data)

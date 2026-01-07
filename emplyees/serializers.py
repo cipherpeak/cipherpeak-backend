@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveRecord, SalaryHistory, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
 from django.contrib.auth import authenticate
 
 
@@ -235,19 +235,28 @@ class EmployeeMediaSerializer(serializers.ModelSerializer):
             return obj.file.url
         return None
 
+#Leave list serializer
+class LeaveListSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(
+        source='employee.get_full_name', read_only=True
+    )
+    approved_by_name = serializers.CharField(
+        source='approved_by.get_full_name', read_only=True
+    )
 
-#leave record serializer
-class LeaveRecordSerializer(serializers.ModelSerializer):
-    approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
-    
     class Meta:
-        model = LeaveRecord
+        model = LeaveManagement
         fields = [
-            'id', 'leave_type', 'start_date', 'end_date', 
-            'reason', 'status', 'applied_on', 'approved_by', 
-            'approved_by_name', 'approved_on'
+            'id',
+            'employee_name',
+            'category',
+            'start_date',
+            'end_date',
+            'total_days',
+            'status',
+            'approved_by_name',
+            'created_at',
         ]
-        read_only_fields = ['applied_on', 'approved_on']
 
 
 #salary history serializer
@@ -267,7 +276,7 @@ class SalaryHistorySerializer(serializers.ModelSerializer):
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
     media_files = EmployeeMediaSerializer(many=True, read_only=True)
-    leave_records = LeaveRecordSerializer(many=True, read_only=True)
+    leave_records = LeaveListSerializer(many=True, read_only=True)
     salary_history = SalaryHistorySerializer(many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
@@ -296,35 +305,71 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 # camera department list serializer
 class CameraDepartmentListSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     class Meta:
         model = CameraDepartment
         fields = [
-            'id', 'client', 'client_name', 'uploaded_date', 'priority','link'
+            'id', 'client', 'client_name', 'uploaded_date', 'priority','link','employee_name'
         ]
 
 
 #camera department create serializer
 class CameraDepartmentCreateSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-
+    
     class Meta:
         model = CameraDepartment
         fields = [
             'client', 'client_name', 'uploaded_date', 'priority', 'link'
         ]
-
+        
 
 #camera department detail serializer
 class CameraDepartmentDetailSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     class Meta:
         model = CameraDepartment
         fields = [
             'id', 'client', 'client_name',  
-            'uploaded_date', 'priority', 'link'
+            'uploaded_date', 'priority', 'link','employee_name'
         ]
+
+
+#Leave create serializer
+class LeaveCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = LeaveManagement
+        fields = [
+            'category',
+            'start_date',
+            'end_date',
+            'total_days',
+            'reason',
+            'address_during_leave',
+            'attachment',
+        ]
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        validated_data['employee'] = request.user
+        return super().create(validated_data)
+
+
+#Leave detail serializer
+class LeaveDetailSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(
+        source='employee.get_full_name', read_only=True
+    )
+    approved_by_name = serializers.CharField(
+        source='approved_by.get_full_name', read_only=True
+    )
+
+    class Meta:
+        model = LeaveManagement
+        fields = '__all__'
+
 
 
 

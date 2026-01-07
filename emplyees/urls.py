@@ -12,7 +12,7 @@ urlpatterns = [
        
     #Employee Creation
     path('employees/create/', views.EmployeeCreateView.as_view(), name='create_employee'),
-
+    
     # update employee details
     path('employees/<int:employee_id>/update/', views.EmployeeUpdateView.as_view(), name='update_employee'),
     
@@ -36,6 +36,11 @@ urlpatterns = [
     path('camera-department/', views.CameraDepartmentListView.as_view(), name='camera_department_list'),
     path('camera-department/create/', views.CameraDepartmentCreateView.as_view(), name='camera_department_create'),
     path('camera-department/<int:pk>/', views.CameraDepartmentDetailView.as_view(), name='camera_department_detail'),
+
+    # Leave Management
+    path('leaves/', views.LeaveListView.as_view(), name='leave-list'),
+    path('leaves/create/', views.LeaveCreateView.as_view(), name='leave-create'),
+    path('leaves/<int:pk>/', views.LeaveDetailView.as_view(), name='leave-detail'),
 ]
 
 
