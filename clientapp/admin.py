@@ -1,6 +1,6 @@
 # client/admin.py
 from django.contrib import admin
-from .models import Client, ClientDocument
+from .models import Client, ClientDocument,ClientPaymentHistory,ClientAdminNote
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
@@ -228,3 +228,26 @@ class ClientDocumentAdmin(admin.ModelAdmin):
     def get_file_name(self, obj):
         return obj.file.name if obj.file else "No file"
     get_file_name.short_description = 'File Name'
+    @admin.register(ClientPaymentHistory)
+    class ClientPaymentHistoryAdmin(admin.ModelAdmin):
+        list_display = [
+            'client',
+            'payment_date',
+            'amount',
+            'payment_method',
+            'created_at',
+            'updated_at'
+        ]
+       
+    @admin.register(ClientAdminNote)
+    class ClientAdminNoteAdmin(admin.ModelAdmin):
+        list_display = [
+            'client',
+            'note',
+            'created_at',
+            'updated_at'
+        ]
+        
+
+            
+        

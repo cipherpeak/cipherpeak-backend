@@ -94,8 +94,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'completed_at', 
             'created_by', 
             'created_by_details', 
-           
-            
+               
         ]
        
 

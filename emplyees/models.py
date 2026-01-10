@@ -1,5 +1,6 @@
 # models.py
 from django.db import models
+from decimal import Decimal
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator
 from django.utils import timezone
@@ -60,11 +61,6 @@ class CustomUser(AbstractUser):
         null=True,
         validators=[MinValueValidator(0)]
     )
-    salary_payment=models.BooleanField(
-        default=False,
-        help_text='Has the employee been paid their salary?'
-        )
-
     
     current_status = models.CharField(
         max_length=20, 
@@ -115,6 +111,7 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return f"{self.username} - {self.get_role_display()}"
 
+
 class EmployeeDocument(models.Model):
     DOCUMENT_TYPES = [
         ('resume', 'Resume/CV'),
@@ -149,6 +146,7 @@ class EmployeeDocument(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.get_document_type_display()} - {self.title}"
 
+
 class EmployeeMedia(models.Model):
     MEDIA_TYPES = [
         ('profile_picture', 'Profile Picture'),
@@ -180,6 +178,7 @@ class EmployeeMedia(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.get_media_type_display()} - {self.title}"
 
+
 class SalaryHistory(models.Model):
 
     user = models.ForeignKey(
@@ -199,6 +198,7 @@ class SalaryHistory(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.salary}"
+
 
 class CameraDepartment(models.Model):
     PRIORITY_CHOICES = [
@@ -244,6 +244,7 @@ class CameraDepartment(models.Model):
     def __str__(self):
         return f"{self.client.client_name} - Project ({self.uploaded_date})"
 
+
 class LeaveManagement(models.Model):
 
     LEAVE_CATEGORY_CHOICES = [
@@ -287,7 +288,7 @@ class LeaveManagement(models.Model):
     total_days = models.DecimalField(
         max_digits=5,
         decimal_places=1,
-        validators=[MinValueValidator(0.5)],
+        validators=[MinValueValidator(Decimal('0.5'))],
         verbose_name="Total Number of Leave Days"
     )
     
@@ -352,8 +353,30 @@ class LeaveManagement(models.Model):
         return f"{self.employee.employee_id} - {self.category} ({self.start_date} to {self.end_date})"
 
 
-
-
+class AdminNote(models.Model):
+    
+    employee = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='admin_notes',
+        verbose_name="Employee"
+    )
+    
+    note = models.TextField(
+        verbose_name="Admin Remarks/Note",
+        help_text="Add remarks or notes about the employee"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Admin Note"
+        verbose_name_plural = "Admin Notes"
+    
+    def __str__(self):
+        return f"Note for {self.employee.employee_id} - {self.created_at.strftime('%Y-%m-%d')}"
 
 
 

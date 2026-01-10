@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment, AdminNote
 from django.contrib.auth import authenticate
 
 
@@ -270,6 +270,30 @@ class SalaryHistorySerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
+class AdminNoteSerializer(serializers.ModelSerializer):
+    created_by = serializers.CharField(source='created_by.employee_id', read_only=True)
+    created_by_role = serializers.CharField(source='created_by.role', read_only=True)
+    
+    class Meta:
+        model = AdminNote
+        fields = [
+            'id',
+            'employee',
+            'note',
+            'created_by',
+            'created_by',
+            'created_by_role',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+class AdminNoteCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AdminNote
+        fields = ['employee', 'note']
+
+
 #employee detail serializer
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
@@ -279,17 +303,18 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
-    
+    admin_notes = AdminNoteSerializer(many=True, read_only=True)
     class Meta:
         model = CustomUser
         fields = [
             'id','email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'role', 'salary', 'salary_payment', 'payment_status', 'current_status', 'joining_date',
+            'phone_number', 'role', 'salary', 'payment_status', 'current_status', 'joining_date',
             'employee_id', 'department', 'designation', 'profile_image', 
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
-            'documents', 'media_files', 'leave_records', 'salary_history',    
+            'documents', 'media_files', 'leave_records', 'salary_history',
+            'admin_notes',    
         ]
     
     def get_payment_status(self, obj):
@@ -408,36 +433,28 @@ class LeaveDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-
-
-
-
-
-
-
-
-
-# Update your existing UserSerializer
-class UserSerializer(serializers.ModelSerializer):
-    profile_image_url = serializers.SerializerMethodField()  # Add this field
+class LeaveUpdateSerializer(serializers.ModelSerializer):
     class Meta:
-        model = CustomUser
+        model = LeaveManagement
         fields = [
-            'id', 'email','phone_number', 'role', 'current_status', 'department',
-            'designation', 'employee_id', 'joining_date', 'salary',
-            'date_of_birth', 'gender', 'address', 'city', 'state',
-            'postal_code', 'country', 'emergency_contact_name',
-            'emergency_contact_phone', 'emergency_contact_relation',
-            'profile_image', 'profile_image_url', 
-            'created_at', 'updated_at'
+            'category', 
+            'start_date', 
+            'end_date', 
+            'total_days', 
+            'reason', 
+            'address_during_leave', 
+            'status', 
+            'rejection_reason'
         ]
-        read_only_fields = ['created_at', 'updated_at']
-    
-    def get_profile_image_url(self, obj):
-        """Get the full URL for the profile image"""
-        if obj.profile_image and hasattr(obj.profile_image, 'url'):
-            request = self.context.get('request')
-            if request is not None:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
-        return None
+        read_only_fields = ['employee', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        """
+        Validate that only authorized users can change the status.
+        Approval logic should ideally be handled here or in the view.
+        """
+        return data
+
+
+
+

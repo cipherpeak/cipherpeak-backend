@@ -1,20 +1,15 @@
 # client/serializers.py
 from rest_framework import serializers
-from .models import Client, ClientDocument
-
+from .models import Client, ClientDocument, ClientPaymentHistory, ClientAdminNote
+from django.utils import timezone
+from datetime import date
+import calendar
 
 
 #client serializer
 class ClientSerializer(serializers.ModelSerializer):
-    total_content_per_month = serializers.ReadOnlyField()
     is_active_client = serializers.ReadOnlyField()
     contract_duration = serializers.ReadOnlyField()
-    is_payment_overdue = serializers.ReadOnlyField()
-    days_until_next_payment = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
-    is_early_payment = serializers.ReadOnlyField()
-    early_payment_days = serializers.ReadOnlyField()
-    
     class Meta:
         model = Client
         fields = [
@@ -40,17 +35,7 @@ class ClientSerializer(serializers.ModelSerializer):
             'onboarding_date',
             'contract_start_date',
             'contract_end_date',
-            'payment_cycle',
-            'payment_date',
-            'next_payment_date',
-            'current_month_payment_status',
-            'last_payment_date',
-            'monthly_retainer',
             # New payment timing fields
-            'payment_timing',
-            'early_payment_date',
-            'early_payment_amount',
-            'early_payment_notes',
             'address',
             'city',
             'state',
@@ -63,31 +48,14 @@ class ClientSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             # Read-only properties
-            'total_content_per_month',
             'is_active_client',
             'contract_duration',
-            'is_payment_overdue',
-            'days_until_next_payment',
-            'payment_status_display',
-            'is_early_payment',
-            'early_payment_days',
+            
         ]
         read_only_fields = [
             'created_at', 
             'updated_at', 
-            'next_payment_date',
-            'total_content_per_month',
             'is_active_client',
-            'contract_duration',
-            'is_payment_overdue',
-            'days_until_next_payment',
-            'payment_status_display',
-            'is_early_payment',
-            'early_payment_days',
-            'payment_timing',
-            'early_payment_date',
-            'early_payment_amount',
-            'early_payment_notes',
         ]
     
     def validate_client_name(self, value):
@@ -102,64 +70,6 @@ class ClientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A client with this name already exists.")
         return value
     
-    def validate(self, data):
-        """Validate contract dates and payment data"""
-        contract_start_date = data.get('contract_start_date')
-        contract_end_date = data.get('contract_end_date')
-        payment_date = data.get('payment_date')
-        
-        # Validate contract dates
-        if contract_start_date and contract_end_date:
-            if contract_end_date <= contract_start_date:
-                raise serializers.ValidationError({
-                    "contract_end_date": "Contract end date must be after start date."
-                })
-        
-        # Validate payment date
-        if payment_date is not None:
-            if payment_date < 1 or payment_date > 31:
-                raise serializers.ValidationError({
-                    "payment_date": "Payment date must be between 1 and 31."
-                })
-        
-        # Validate monthly retainer
-        monthly_retainer = data.get('monthly_retainer')
-        if monthly_retainer is not None and monthly_retainer < 0:
-            raise serializers.ValidationError({
-                "monthly_retainer": "Monthly retainer cannot be negative."
-            })
-        
-        # Validate early payment amount
-        early_payment_amount = data.get('early_payment_amount')
-        if early_payment_amount is not None and early_payment_amount < 0:
-            raise serializers.ValidationError({
-                "early_payment_amount": "Early payment amount cannot be negative."
-            })
-        
-        return data
-    
-    def create(self, validated_data):
-        """Override create to handle automatic next_payment_date calculation"""
-        instance = super().create(validated_data)
-        # Next payment date will be automatically calculated in the model's save method
-        return instance
-    
-    def update(self, instance, validated_data):
-        """Override update to handle automatic next_payment_date calculation"""
-        # Store original payment date to check if it changed
-        original_payment_date = instance.payment_date
-        original_payment_cycle = instance.payment_cycle
-        
-        instance = super().update(instance, validated_data)
-        
-        # If payment date or cycle changed, recalculate next payment date
-        if (validated_data.get('payment_date') != original_payment_date or 
-            validated_data.get('payment_cycle') != original_payment_cycle):
-            instance.calculate_next_payment_date()
-            instance.save()
-        
-        return instance
-
 
 #client document serializer
 class ClientDocumentSerializer(serializers.ModelSerializer):
@@ -172,42 +82,132 @@ class ClientDocumentSerializer(serializers.ModelSerializer):
             'id', 'document_type', 'file', 'client_name', 
         ]
         
-        
+
+class ClientPaymentHistorySerializer(serializers.ModelSerializer):
+    """Serializer for client payment history"""
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
+    processed_by_name = serializers.CharField(source='processed_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = ClientPaymentHistory
+        fields = [
+            'id',
+            'client',
+            'client_name',
+            'payment_date',
+            'amount',
+            'payment_type',
+            'payment_method',
+            'transaction_id',
+            'reference_number',
+            'notes',
+            'is_early_payment',
+            'early_days',
+            'processed_by',
+            'processed_by_name',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['processed_by', 'created_at', 'updated_at']
+
+
+class ClientAdminNoteSerializer(serializers.ModelSerializer):
+    """Serializer for client admin notes"""
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    created_by_role = serializers.CharField(source='created_by.role', read_only=True)
+    
+    class Meta:
+        model = ClientAdminNote
+        fields = [
+            'id',
+            'client',
+            'note',
+            'created_by',
+            'created_by_name',
+            'created_by_role',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+
+class ClientAdminNoteCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating client admin notes"""
+    class Meta:
+        model = ClientAdminNote
+        fields = ['client', 'note']
+
+
 
 #client detail serializer
 class ClientDetailSerializer(serializers.ModelSerializer):
     """Full serializer for client details including all fields and properties"""
-    total_content_per_month = serializers.ReadOnlyField()
     is_active_client = serializers.ReadOnlyField()
     contract_duration = serializers.ReadOnlyField()
-    is_payment_overdue = serializers.ReadOnlyField()
-    days_until_next_payment = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
-    is_early_payment = serializers.ReadOnlyField()
-    early_payment_days = serializers.ReadOnlyField()
     documents = ClientDocumentSerializer(many=True, read_only=True)
+    payment_history = ClientPaymentHistorySerializer(many=True, read_only=True)
+    admin_notes = ClientAdminNoteSerializer(many=True, read_only=True)
+    
+    
+    
+    payment_status = serializers.SerializerMethodField()
     
     
     class Meta:
         model = Client
         fields = [
-            'id','client_name','client_type','industry',
-            'owner_name','contact_person_name','contact_email',
-            'contact_phone','instagram_id','facebook_id',
-            'youtube_channel','google_my_business','linkedin_url',
-            'twitter_handle','videos_per_month','posters_per_month',
-            'reels_per_month','stories_per_month','status',
-            'contract_start_date','contract_end_date','payment_cycle',
-            'payment_date','monthly_retainer','address','city','state',
-            'country','postal_code','website',
-            'business_registration_number','tax_id','description',
-            'next_payment_date',
-            'total_content_per_month',
-            'is_active_client','contract_duration',
-            'is_payment_overdue','days_until_next_payment',
-            'payment_status_display','is_early_payment',
-            'early_payment_days','documents']
-       
+            'id', 'client_name', 'client_type', 'industry',
+            'owner_name', 'contact_person_name', 'contact_email',
+            'contact_phone', 'instagram_id', 'facebook_id',
+            'youtube_channel', 'google_my_business', 'linkedin_url',
+            'twitter_handle', 'videos_per_month', 'posters_per_month',
+            'reels_per_month', 'stories_per_month', 'status',
+            'monthly_retainer', 'address', 'city', 'state',
+            'country', 'postal_code', 'website',
+            'business_registration_number', 'tax_id', 'description',
+            'is_active_client', 'contract_duration', 'documents', 
+            'payment_history', 'admin_notes', 'payment_status',
+            # Add these fields if they exist in your Client model:
+            'contract_start_date', 'contract_end_date', 'admin_notes',
+        ]
+    
+        
+    def get_payment_status(self, obj):
+        today = timezone.now().date()
+        
+        # Check if payment history exists for current month and year
+        has_paid = obj.payment_history.filter(
+            payment_date__year=today.year, 
+            payment_date__month=today.month
+        ).exists()
+        
+        if has_paid:
+            return "Paid"
+            
+        if not obj.payment_date:
+            return "Unknown"
+            
+        # Get the current year and month
+        current_year = today.year
+        current_month = today.month
+        
+        # Get the last day of current month
+        _, last_day_current_month = calendar.monthrange(current_year, current_month)
+        
+        # Adjust payment date if it exceeds the last day of the month
+        adjusted_payment_date = min(obj.payment_date, last_day_current_month)
+        
+        # Create payment date for current month
+        payment_due_date = date(current_year, current_month, adjusted_payment_date)
+            
+        days_diff = (payment_due_date - today).days
+        
+        if days_diff <= 0:
+            return "Payment Due" # Date passed for this month or is today
+        elif days_diff <= 5:
+            return "Payment date reaching soon"
+        else:
+            return "Pending"
 
 #client update serializer
 class ClientUpdateSerializer(serializers.ModelSerializer):
@@ -235,9 +235,6 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             'status',
             'contract_start_date',
             'contract_end_date',
-            'payment_cycle',
-            'payment_date',
-            'monthly_retainer',
             'address',
             'city',
             'state',
@@ -258,56 +255,12 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A client with this name already exists.")
         return value
 
-    def validate(self, data):
-        """Validate contract dates and payment data"""
-        contract_start_date = data.get('contract_start_date')
-        contract_end_date = data.get('contract_end_date')
-        payment_date = data.get('payment_date')
-        
-        if contract_start_date and contract_end_date:
-            if contract_end_date <= contract_start_date:
-                raise serializers.ValidationError({
-                    "contract_end_date": "Contract end date must be after start date."
-                })
-        
-        if payment_date is not None:
-            if payment_date < 1 or payment_date > 31:
-                raise serializers.ValidationError({
-                    "payment_date": "Payment date must be between 1 and 31."
-                })
-        
-        monthly_retainer = data.get('monthly_retainer')
-        if monthly_retainer is not None and monthly_retainer < 0:
-            raise serializers.ValidationError({
-                "monthly_retainer": "Monthly retainer cannot be negative."
-            })
-        
-        return data
-
-    def update(self, instance, validated_data):
-        """Override update to handle automatic next_payment_date calculation"""
-        original_payment_date = instance.payment_date
-        original_payment_cycle = instance.payment_cycle
-        
-        instance = super().update(instance, validated_data)
-        
-        if (validated_data.get('payment_date') != original_payment_date or 
-            validated_data.get('payment_cycle') != original_payment_cycle):
-            instance.calculate_next_payment_date()
-            instance.save()
-        
-        return instance
-
+   
 #client list serializer
 class ClientListSerializer(serializers.ModelSerializer):
     """Simplified serializer for client lists"""
-    total_content_per_month = serializers.ReadOnlyField()
     is_active_client = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
-    is_payment_overdue = serializers.ReadOnlyField()
-    is_early_payment = serializers.ReadOnlyField()
-    payment_timing_display = serializers.CharField(source='get_payment_timing_display', read_only=True)
-    
+   
     class Meta:
         model = Client
         fields = [
@@ -319,126 +272,34 @@ class ClientListSerializer(serializers.ModelSerializer):
             'contact_email',
             'contact_phone',
             'status',
-            'monthly_retainer',
-            'payment_cycle',
-            'next_payment_date',
-            'current_month_payment_status',
-            'payment_timing',
-            'payment_timing_display',
-            'early_payment_date',
-            'total_content_per_month',
             'is_active_client',
-            'payment_status_display',
-            'is_payment_overdue',
-            'is_early_payment',
             'created_at',
         ]
 
 
 
-
-class ClientPaymentStatusUpdateSerializer(serializers.Serializer):
-    """Serializer for updating payment status"""
-    payment_status = serializers.ChoiceField(
-        choices=Client.PAYMENT_STATUS_CHOICES,
-        required=False
-    )
-    mark_as_paid = serializers.BooleanField(default=False)
-    mark_as_early_paid = serializers.BooleanField(default=False)
-    payment_date = serializers.DateField(required=False)
-    amount = serializers.DecimalField(
-        max_digits=12, 
-        decimal_places=2, 
-        required=False,
-        min_value=0
-    )
-    notes = serializers.CharField(required=False, allow_blank=True)
-    
-    def validate(self, data):
-        """Validate payment update data"""
-        mark_as_paid = data.get('mark_as_paid')
-        mark_as_early_paid = data.get('mark_as_early_paid')
-        payment_status = data.get('payment_status')
-        
-        # Cannot mark as paid and set payment status simultaneously
-        if mark_as_paid and payment_status:
-            raise serializers.ValidationError({
-                "mark_as_paid": "Cannot set both mark_as_paid and payment_status. Use mark_as_paid to automatically set status to paid."
-            })
-        
-        # Validate early payment requirements
-        if mark_as_early_paid:
-            if not data.get('payment_date'):
-                raise serializers.ValidationError({
-                    "payment_date": "Payment date is required for early payments."
-                })
-        
-        return data
-    
-    def update(self, instance, validated_data):
-        payment_status = validated_data.get('payment_status')
-        mark_as_paid = validated_data.get('mark_as_paid')
-        mark_as_early_paid = validated_data.get('mark_as_early_paid')
-        payment_date = validated_data.get('payment_date')
-        amount = validated_data.get('amount')
-        notes = validated_data.get('notes')
-        
-        if mark_as_early_paid:
-            # Mark as early payment
-            instance.mark_early_payment(
-                payment_date=payment_date,
-                amount=amount,
-                notes=notes
-            )
-        elif mark_as_paid:
-            # Mark as regular paid payment
-            instance.mark_payment_as_paid(
-                payment_date=payment_date,
-                amount=amount,
-                notes=notes
-            )
-        elif payment_status:
-            # Manually set payment status
-            instance.current_month_payment_status = payment_status
-            instance.save()
-        
-        return instance
-
-class ClientEarlyPaymentSerializer(serializers.Serializer):
-    """Serializer specifically for early payments"""
+class ClientMarkPaymentSerializer(serializers.ModelSerializer):
+    """Simplified serializer for marking payments"""
     payment_date = serializers.DateField(required=True)
     amount = serializers.DecimalField(
-        max_digits=12, 
-        decimal_places=2, 
-        required=False,
+        max_digits=12,
+        decimal_places=2,
+        required=True,
         min_value=0
     )
+    payment_method = serializers.ChoiceField(
+        choices=ClientPaymentHistory.PAYMENT_METHOD_CHOICES,
+        default='bank_transfer'
+    )
+    transaction_id = serializers.CharField(required=False, allow_blank=True)
+    reference_number = serializers.CharField(required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
     
-    def update(self, instance, validated_data):
-        """Mark payment as early paid"""
-        instance.mark_early_payment(
-            payment_date=validated_data['payment_date'],
-            amount=validated_data.get('amount'),
-            notes=validated_data.get('notes', '')
-        )
-        return instance
+    def validate_payment_date(self, value):
+        if value > timezone.now().date():
+            raise serializers.ValidationError("Payment date cannot be in the future.")
+        return value
 
-
-
-class ClientStatsSerializer(serializers.Serializer):
-    """Serializer for client statistics"""
-    total_clients = serializers.IntegerField()
-    active_clients = serializers.IntegerField()
-    overdue_payments = serializers.IntegerField()
-    early_payments = serializers.IntegerField()
-    total_monthly_revenue = serializers.DecimalField(max_digits=12, decimal_places=2)
-    clients_by_industry = serializers.DictField()
-    clients_by_status = serializers.DictField()
-    clients_by_payment_status = serializers.DictField()
-    clients_by_payment_timing = serializers.DictField()
-
-class ClientPaymentTimelineSerializer(serializers.ModelSerializer):
     """Serializer for client payment timeline information"""
     payment_status_display = serializers.ReadOnlyField()
     days_until_next_payment = serializers.ReadOnlyField()

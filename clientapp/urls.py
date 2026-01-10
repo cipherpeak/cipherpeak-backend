@@ -22,17 +22,14 @@ urlpatterns = [
     path('clients/delete/<int:id>/', views.ClientDeleteView.as_view(), name='delete_client'),
 
 
-
-
-
-
-    # Client Statistics URL
-    path('clients/stats/', views.ClientStatsView.as_view(), name='client-stats'),
-    path('earlypaid/<int:id>/mark-early-payment/', views.ClientMarkEarlyPaymentView.as_view(), name='client-mark-early-payment'),
-    path('clients/<int:id>/payment-timeline/', views.ClientPaymentTimelineView.as_view(), name='client-payment-timeline'),
-    path('clients/early-payments/', views.ClientEarlyPaymentsView.as_view(), name='client-early-payments'),
-    path('clients/payment-analytics/', views.client_payment_analytics, name='client-payment-analytics'),
-
+    #client mark payment url
     
-   
+    path('clients/<int:id>/admin-note/', views.ClientAdminNoteView.as_view(), name='client-admin-note'),
+    path('clients/<int:id>/admin-note/create/', views.ClientAdminNoteCreateView.as_view(), name='client-admin-note-create'),
+
+
+    #client process payment url
+    path('clients/process-salary-payment/', views.ClientPaymentView.as_view(), name='salary-payment'),
+    path('clients/process-salary-payment/<int:id>/', views.ClientPaymentProcessView.as_view(), name='process-salary-payment')
+ 
 ]

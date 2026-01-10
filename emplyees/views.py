@@ -24,6 +24,9 @@ from .serializers import (
     LeaveCreateSerializer,
     LeaveListSerializer,
     LeaveDetailSerializer,
+    AdminNoteCreateSerializer,
+    AdminNoteSerializer,
+    LeaveUpdateSerializer,
 )
 
 # login view 
@@ -502,7 +505,7 @@ class CameraDepartmentDetailView(APIView):
 #Leave create view 
 class LeaveCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
         serializer = LeaveCreateSerializer(
@@ -515,6 +518,7 @@ class LeaveCreateView(APIView):
                 {'message': 'Leave applied successfully'},
                 status=status.HTTP_201_CREATED
             )
+        print("Leave serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -566,6 +570,87 @@ class LeaveDetailView(APIView):
         serializer = LeaveDetailSerializer(leave)
         return Response(serializer.data)
 
+    def put(self, request, pk):
+        return self.update(request, pk, partial=False)
+
+    def patch(self, request, pk):
+        return self.update(request, pk, partial=True)
+
+    def update(self, request, pk, partial):
+        try:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Permission check: Only managers/admins/hr or directors can update status
+        # Employees can only update their own leave if it's still pending
+        is_staff = request.user.role in ['manager', 'hr', 'admin', 'director']
+        is_owner = request.user == leave.employee
+
+        if not (is_staff or is_owner):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Restricted update for owners: cannot change status or update if not pending
+        if is_owner and not is_staff:
+            if 'status' in request.data:
+                 return Response(
+                    {'error': 'You cannot change the status of your own leave application.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if leave.status != 'pending':
+                return Response(
+                    {'error': 'You can only update leave applications that are still pending.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        serializer = LeaveUpdateSerializer(leave, data=request.data, partial=partial)
+        if serializer.is_valid():
+            # If a staff member is updating status, record who approved/rejected it
+            if is_staff and 'status' in request.data:
+                serializer.save(approved_by=request.user, approved_at=timezone.now())
+            else:
+                serializer.save()
+            
+            return Response(
+                {
+                    'message': 'Leave record updated successfully',
+                    'leave': LeaveDetailSerializer(leave).data
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        try:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Permission check: Owner or authorized staff can delete
+        if (
+            request.user != leave.employee and
+            request.user.role not in ['manager', 'hr', 'admin', 'director']
+        ):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        leave.delete()
+        return Response(
+            {'message': 'Leave record deleted successfully'},
+            status=status.HTTP_200_OK
+        )
+
 
 class SalaryHistoryView(APIView):
     permission_classes = [IsAuthenticated]
@@ -604,3 +689,63 @@ class ProcessSalaryPaymentView(APIView):
         )
         
         return Response({'message': 'Salary processed successfully'})
+
+
+# Admin Note List and Create View
+class AdminNoteListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, employee_id):
+        """Get all admin notes for a specific employee"""
+        try:
+            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permission - only admins/HR/managers can view admin notes
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to view admin notes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        notes = AdminNote.objects.filter(employee=employee).order_by('-created_at')
+        serializer = AdminNoteSerializer(notes, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request, employee_id):
+        """Create a new admin note for an employee"""
+        try:
+            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permission - only admins/HR/managers can create admin notes
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to create admin notes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        data = request.data.copy()
+        data['employee'] = employee.id
+        
+        serializer = AdminNoteCreateSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    'message': 'Admin note created successfully',
+                    
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+

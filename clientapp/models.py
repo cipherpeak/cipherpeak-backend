@@ -4,6 +4,8 @@ from django.utils import timezone
 from datetime import date, timedelta
 import calendar
 
+
+
 class Client(models.Model):
     # Client Type Choices
     CLIENT_TYPE_CHOICES = [
@@ -261,7 +263,7 @@ class Client(models.Model):
             return
         
         if self.next_payment_date:
-            if today > self.next_payment_date:
+            if today >= self.next_payment_date:
                 self.current_month_payment_status = 'overdue'
             else:
                 self.current_month_payment_status = 'pending'
@@ -436,6 +438,7 @@ class Client(models.Model):
             if self.early_payment_date < original_due_date:
                 return (original_due_date - self.early_payment_date).days
         return 0
+
 class ClientDocument(models.Model):
     """Model to store client-related documents"""
     DOCUMENT_TYPES = [
@@ -470,3 +473,88 @@ class ClientDocument(models.Model):
     def __str__(self):
         return f"{self.client.client_name} - {self.get_document_type_display()} - {self.title}"
 
+class ClientPaymentHistory(models.Model):
+    """Model to track client payment history"""
+    PAYMENT_TYPE_CHOICES = [
+        ('monthly', 'Monthly Retainer'),
+        ('early', 'Early Payment'),
+        ('partial', 'Partial Payment'),
+        ('custom', 'Custom Payment'),
+    ]
+    
+    PAYMENT_METHOD_CHOICES = [
+        ('bank_transfer', 'Bank Transfer'),
+        ('cheque', 'Cheque'),
+        ('cash', 'Cash'),
+        ('online', 'Online Payment'),
+        ('upi', 'UPI'),
+    ]
+    
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name='payment_history'
+    )
+    payment_date = models.DateField(default=timezone.now)
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(0)]
+    )
+    payment_type = models.CharField(
+        max_length=20,
+        choices=PAYMENT_TYPE_CHOICES,
+        default='monthly'
+    )
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        default='bank_transfer'
+    )
+    transaction_id = models.CharField(max_length=100, blank=True, null=True)
+    reference_number = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    is_early_payment = models.BooleanField(default=False)
+    early_days = models.IntegerField(default=0, help_text="Days before due date")
+    processed_by = models.ForeignKey(
+        'emplyees.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='processed_payments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-payment_date', '-created_at']
+        verbose_name = 'Payment History'
+        verbose_name_plural = 'Payment History'
+    
+    def __str__(self):
+        return f"{self.client.client_name} - {self.amount} - {self.payment_date}"
+
+
+class ClientAdminNote(models.Model):
+    """Model for admin notes about clients"""
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name='admin_notes'
+    )
+    note = models.TextField(verbose_name="Admin Remarks/Note")
+    created_by = models.ForeignKey(
+        'emplyees.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='client_admin_notes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Client Admin Note"
+        verbose_name_plural = "Client Admin Notes"
+    
+    def __str__(self):
+        return f"Note for {self.client.client_name} - {self.created_at.strftime('%Y-%m-%d')}"
