@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment, AdminNote
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, Payroll, CameraDepartment, AdminNote
 from django.contrib.auth import authenticate
 
 
@@ -259,15 +259,19 @@ class LeaveListSerializer(serializers.ModelSerializer):
         ]
 
 
-#salary history serializer
-class SalaryHistorySerializer(serializers.ModelSerializer):
+# Payroll serializer
+class PayrollSerializer(serializers.ModelSerializer):
+    processed_by_name = serializers.CharField(source='processed_by.get_full_name', read_only=True)
+    
     class Meta:
-        model = SalaryHistory
+        model = Payroll
         fields = [
-            'id', 'salary', 'incentive',
-            'reason', 'created_at', 'updated_at'
+            'id', 'month', 'year', 'base_salary', 'incentives', 
+            'deductions', 'net_amount', 'scheduled_date', 
+            'status', 'payment_date', 'payment_method', 
+            'processed_by_name', 'remarks', 'created_at'
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'net_amount']
 
 
 class AdminNoteSerializer(serializers.ModelSerializer):
@@ -299,7 +303,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
     media_files = EmployeeMediaSerializer(many=True, read_only=True)
     leave_records = LeaveListSerializer(source='leaves', many=True, read_only=True)
-    salary_history = SalaryHistorySerializer(many=True, read_only=True)
+    payroll_history = PayrollSerializer(source='payrolls', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
@@ -313,7 +317,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
-            'documents', 'media_files', 'leave_records', 'salary_history',
+            'documents', 'media_files', 'leave_records', 'payroll_history',
             'admin_notes',    
         ]
     
@@ -322,17 +326,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         import calendar
         
         today = timezone.now().date()
-        
-        # Check if salary history exists for current month and year
-        has_paid = obj.salary_history.filter(
-            created_at__year=today.year, 
-            created_at__month=today.month
-        ).exists()
-        
-        if has_paid:
-            return "Paid"
-            
-        today = timezone.now().date()
         if not obj.joining_date:
             return "Unknown"
             
@@ -340,18 +333,30 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         
         # Calculate payment due date for current month
         try:
-            payment_due_date = today.replace(day=joining_day)
+            scheduled_date = today.replace(day=joining_day)
         except ValueError:
             # Handle shorter months
             last_day = calendar.monthrange(today.year, today.month)[1]
-            payment_due_date = today.replace(day=last_day)
+            scheduled_date = today.replace(day=last_day)
             
-        days_diff = (payment_due_date - today).days
+        # Check if a payroll record exists for this month
+        payroll = obj.payrolls.filter(month=today.month, year=today.year).first()
         
-        if days_diff <= 0:
-            return "Payment Due" # Date passed for this month or is today
-        elif days_diff <= 5:
-            return "Payment date reaching soon"
+        if payroll:
+            if payroll.status in ['paid', 'early_paid']:
+                return "Paid"
+            if payroll.status == 'overdue':
+                return "Overdue"
+            # If it's pending but we have a record, still check the date
+        
+        days_diff = (scheduled_date - today).days
+        
+        if days_diff < 0:
+            return "Overdue" # Date passed for this month
+        elif days_diff == 0:
+            return "Due Today"
+        elif days_diff <= 7:
+            return "Payment Coming Soon"
         else:
             return "Pending"
     

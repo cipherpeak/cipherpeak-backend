@@ -179,25 +179,80 @@ class EmployeeMedia(models.Model):
         return f"{self.user.username} - {self.get_media_type_display()} - {self.title}"
 
 
-class SalaryHistory(models.Model):
+class Payroll(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('paid', 'Paid'),
+        ('early_paid', 'Early Paid'),
+        ('overdue', 'Overdue'),
+    ]
 
-    user = models.ForeignKey(
+    PAYMENT_METHOD_CHOICES = [
+        ('bank_transfer', 'Bank Transfer'),
+        ('upi', 'UPI'),
+        ('cash', 'Cash'),
+        ('cheque', 'Cheque'),
+        ('other', 'Other'),
+    ]
+
+    employee = models.ForeignKey(
         CustomUser, 
         on_delete=models.CASCADE, 
-        related_name='salary_history'
+        related_name='payrolls'
     )
-    salary = models.DecimalField(max_digits=12, decimal_places=2)
-    incentive = models.DecimalField(max_digits=12, decimal_places=2)
-    reason = models.CharField(max_length=200, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True,blank=True,null=True)
-    updated_at = models.DateTimeField(auto_now=True,blank=True,null=True)
+    
+    # Period Information
+    month = models.IntegerField()
+    year = models.IntegerField()
+    
+    # Financial Details (Snapshots)
+    base_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    incentives = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    
+    # Scheduling
+    scheduled_date = models.DateField()
+    
+    # Payment Details
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='pending'
+    )
+    payment_date = models.DateTimeField(blank=True, null=True)
+    payment_method = models.CharField(
+        max_length=50, 
+        choices=PAYMENT_METHOD_CHOICES, 
+        blank=True, 
+        null=True
+    )
+    processed_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='processed_payrolls'
+    )
+    remarks = models.TextField(blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        verbose_name = 'Salary History'
-        verbose_name_plural = 'Salary History'
+        verbose_name = 'Payroll Record'
+        verbose_name_plural = 'Payroll Records'
+        unique_together = ('employee', 'month', 'year')
+        ordering = ['-year', '-month']
     
     def __str__(self):
-        return f"{self.user.username} - {self.salary}"
+        return f"{self.employee.username} - {self.month}/{self.year} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        # Auto-calculate net amount if not set
+        if self.net_amount is None or not self.pk:
+            self.net_amount = self.base_salary + self.incentives - self.deductions
+        super().save(*args, **kwargs)
 
 
 class CameraDepartment(models.Model):

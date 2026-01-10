@@ -8,7 +8,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cipher.settings')
 django.setup()
 
 from clientapp.models import Client, ClientPaymentHistory
-from emplyees.models import CustomUser, SalaryHistory
+from emplyees.models import CustomUser, Payroll
 from clientapp.serializers import ClientDetailSerializer
 from emplyees.serializers import EmployeeDetailSerializer
 
@@ -49,8 +49,8 @@ def test_employee_logic():
         ("Salary Due Today", today),
         ("Salary Overdue (1 day past)", today - timedelta(days=1)),
         ("Salary Reaching Soon (2 days remaining)", today + timedelta(days=2)),
-        ("Salary Reaching Soon (5 days remaining)", today + timedelta(days=5)),
-        ("Salary Pending (6 days remaining)", today + timedelta(days=6)),
+        ("Salary Reaching Soon (7 days remaining)", today + timedelta(days=7)),
+        ("Salary Pending (8 days remaining)", today + timedelta(days=8)),
     ]
     
     for label, due_date in scenarios:
@@ -67,8 +67,10 @@ def test_employee_logic():
         print(f"Scenario: {label:40} | Serializer status: {status}")
 
 if __name__ == "__main__":
+    import traceback
     try:
         test_client_logic()
         test_employee_logic()
     except Exception as e:
         print(f"Error during verification: {e}")
+        traceback.print_exc()

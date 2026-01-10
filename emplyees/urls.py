@@ -43,7 +43,7 @@ urlpatterns = [
     path('leaves/<int:pk>/', views.LeaveDetailView.as_view(), name='leave-detail'),
 
 
-    path('salary-history/', views.SalaryHistoryView.as_view(), name='salary-history'),
+    path('payroll-history/', views.PayrollListView.as_view(), name='payroll-history'),
     path('process-salary-payment/<int:pk>/', views.ProcessSalaryPaymentView.as_view(), name='process-salary-payment'),
 
     path('admin-notes/<int:employee_id>/', views.AdminNoteListCreateView.as_view(), name='admin-note-list-create'),

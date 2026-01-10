@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, Payroll, CameraDepartment
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
@@ -16,7 +16,6 @@ from .serializers import (
     EmployeeDetailSerializer,
     EmployeeDocumentSerializer, 
     EmployeeMediaSerializer,
-    SalaryHistorySerializer,
     EmployeeListSerializer,
     CameraDepartmentListSerializer,
     CameraDepartmentCreateSerializer,
@@ -27,6 +26,7 @@ from .serializers import (
     AdminNoteCreateSerializer,
     AdminNoteSerializer,
     LeaveUpdateSerializer,
+    PayrollSerializer,
 )
 
 # login view 
@@ -270,7 +270,7 @@ class EmployeeDetailView(APIView):
             Prefetch('documents', queryset=EmployeeDocument.objects.all()),
             Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
             Prefetch('leaves', queryset=LeaveManagement.objects.all().order_by('-start_date')),
-            Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-created_at'))
+            Prefetch('payrolls', queryset=Payroll.objects.all().order_by('-created_at'))
         ).first()
         
         serializer = EmployeeDetailSerializer(employee, context={'request': request})
@@ -440,7 +440,6 @@ class CameraDepartmentListView(APIView):
         return Response(serializer.data)
 
 
-
 #camera department create view
 class CameraDepartmentCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -460,7 +459,6 @@ class CameraDepartmentCreateView(APIView):
             serializer.save(employee=request.user)
             return Response("project created successfully", status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 #camera department detail view
@@ -652,13 +650,13 @@ class LeaveDetailView(APIView):
         )
 
 
-class SalaryHistoryView(APIView):
+class PayrollListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        salary_history = SalaryHistory.objects.filter(employee=user)
-        serializer = SalaryHistorySerializer(salary_history, many=True)
+        # Show payrolls for the logged in user
+        payrolls = Payroll.objects.filter(employee=request.user)
+        serializer = PayrollSerializer(payrolls, many=True)
         return Response(serializer.data)
     
 
@@ -671,24 +669,66 @@ class ProcessSalaryPaymentView(APIView):
         except CustomUser.DoesNotExist:
             return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Check if salary already paid for this month
-        now = timezone.now()
-        if SalaryHistory.objects.filter(
-            user=employee, 
-            created_at__year=now.year, 
-            created_at__month=now.month
-        ).exists():
-             return Response({'message': 'Salary already paid for this month'}, status=status.HTTP_400_BAD_REQUEST)
+        # Check permissions - only admins/HR/managers/directors can pay salary
+        if request.user.role not in ['admin', 'hr', 'manager', 'director'] and not request.user.is_superuser:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Create salary history record
-        SalaryHistory.objects.create(
-            user=employee,
-            salary=employee.salary if employee.salary else 0,
-            incentive=request.data.get('incentive', 0),
-            reason="Monthly Salary Payment",
-        )
+        now = timezone.now()
+        month = now.month
+        year = now.year
         
-        return Response({'message': 'Salary processed successfully'})
+        # Check if already paid for this month
+        payroll = Payroll.objects.filter(employee=employee, month=month, year=year).first()
+        if payroll and payroll.status in ['paid', 'early_paid']:
+             return Response({
+                 'error': f'Salary already paid for {calendar.month_name[month]} {year}'
+             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # If no payroll record exists for this month, create one
+        if not payroll:
+            import calendar
+            joining_day = employee.joining_date.day
+            try:
+                scheduled_date = now.date().replace(day=joining_day)
+            except ValueError:
+                # Handle shorter months
+                last_day = calendar.monthrange(year, month)[1]
+                scheduled_date = now.date().replace(day=last_day)
+            
+            payroll = Payroll.objects.create(
+                employee=employee,
+                month=month,
+                year=year,
+                base_salary=employee.salary if employee.salary else 0,
+                scheduled_date=scheduled_date,
+                status='pending'
+            )
+
+        # Process the payment
+        incentives = request.data.get('incentives', 0)
+        deductions = request.data.get('deductions', 0)
+        payment_method = request.data.get('payment_method', 'bank_transfer')
+        remarks = request.data.get('remarks', '')
+        
+        payroll.incentives = incentives
+        payroll.deductions = deductions
+        payroll.payment_method = payment_method
+        payroll.remarks = remarks
+        payroll.payment_date = now
+        payroll.processed_by = request.user
+        
+        # Determine status: paid or early_paid
+        if now.date() < payroll.scheduled_date:
+            payroll.status = 'early_paid'
+        else:
+            payroll.status = 'paid'
+            
+        payroll.save()
+        
+        return Response({
+            'message': 'Salary processed successfully',
+            'payroll': PayrollSerializer(payroll).data
+        })
 
 
 # Admin Note List and Create View
