@@ -2,10 +2,6 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-
-
-
-
 class Task(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -55,7 +51,7 @@ class Task(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
-        # Auto-update completed_at when status changes to completed
+        
         if self.status == 'completed' and not self.completed_at:
             self.completed_at = timezone.now()
         elif self.status != 'completed':

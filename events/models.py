@@ -1,5 +1,4 @@
 
-# Create your models here.
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinLengthValidator
@@ -8,9 +7,6 @@ from django.utils import timezone
 User = get_user_model()
 
 class Event(models.Model):
-    """
-    Event model for managing various types of events like meetings, special days, etc.
-    """
     
     # Event type choices
     EVENT_TYPE_CHOICES = [
@@ -30,7 +26,6 @@ class Event(models.Model):
         ('other', 'Other'),
     ]
     
-    # Event name and description
     name = models.CharField(
         max_length=200,
         validators=[MinLengthValidator(2)],
@@ -44,12 +39,10 @@ class Event(models.Model):
         help_text="Detailed description of the event"
     )
     
-    # Event date and time
     event_date = models.DateTimeField(
         help_text="Date and time when the event will occur"
     )
     
-    # Event type
     event_type = models.CharField(
         max_length=50,
         choices=EVENT_TYPE_CHOICES,
@@ -57,7 +50,6 @@ class Event(models.Model):
         help_text="Type of the event"
     )
     
-    # Assigned employee (Foreign Key to User model)
     assigned_employee = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -65,7 +57,6 @@ class Event(models.Model):
         help_text="Employee assigned to this event"
     )
     
-    # Location information
     location = models.CharField(
         max_length=300,
         blank=True,
@@ -73,7 +64,7 @@ class Event(models.Model):
         help_text="Physical or virtual location of the event"
     )
     
-    # Additional useful fields
+
     created_by = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -85,7 +76,6 @@ class Event(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
-    # Status field for event lifecycle
     STATUS_CHOICES = [
         ('scheduled', 'Scheduled'),
         ('in_progress', 'In Progress'),
@@ -101,14 +91,12 @@ class Event(models.Model):
         help_text="Current status of the event"
     )
     
-    # Duration field (optional but useful)
     duration_minutes = models.PositiveIntegerField(
         blank=True,
         null=True,
         help_text="Duration of the event in minutes"
     )
     
-    # Recurring event support (optional)
     is_recurring = models.BooleanField(
         default=False,
         help_text="Whether this event repeats regularly"
@@ -179,9 +167,7 @@ class Event(models.Model):
         return "Not specified"
 
     def soft_delete(self, user=None):
-        """
-        Soft delete the event
-        """
+        
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.save()

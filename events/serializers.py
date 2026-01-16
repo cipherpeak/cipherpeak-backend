@@ -7,7 +7,6 @@ User = get_user_model()
 
 # event create serializer
 class EventCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating events"""
     
     class Meta:
         model = Event
@@ -26,24 +25,25 @@ class EventCreateSerializer(serializers.ModelSerializer):
         
     
     def validate_event_date(self, value):
-        """Validate that event date is in the future"""
+        
         from django.utils import timezone
         if value < timezone.now():
             raise serializers.ValidationError("Event date cannot be in the past.")
         return value
 
 
+#user serializer
 class UserSerializer(serializers.ModelSerializer):
-    """Serializer for user details"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name']
 
+
 # event list serializer
 class EventListSerializer(serializers.ModelSerializer):
-    """Serializer for listing events"""
+   
     assigned_employee_details = UserSerializer(source='assigned_employee', read_only=True)
     event_type_display = serializers.CharField(source='get_event_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -70,7 +70,7 @@ class EventListSerializer(serializers.ModelSerializer):
 
 # event detail serializer
 class EventDetailSerializer(serializers.ModelSerializer):
-    """Serializer for Event model"""
+    
     assigned_employee_details = UserSerializer(source='assigned_employee', read_only=True)
     created_by_details = UserSerializer(source='created_by', read_only=True)
     is_past_event = serializers.BooleanField(read_only=True)
@@ -111,7 +111,6 @@ class EventDetailSerializer(serializers.ModelSerializer):
 
 # event update serializer
 class EventUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating events"""
     
     class Meta:
         model = Event
@@ -129,7 +128,7 @@ class EventUpdateSerializer(serializers.ModelSerializer):
         ]
     
     def validate_event_date(self, value):
-        """Validate that event date is in the future"""
+        
         from django.utils import timezone
         if value < timezone.now():
             raise serializers.ValidationError("Event date cannot be in the past.")
@@ -137,14 +136,3 @@ class EventUpdateSerializer(serializers.ModelSerializer):
 
 
 
-
-
-
-
-
-class EventStatusUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating only event status"""
-    
-    class Meta:
-        model = Event
-        fields = ['status']

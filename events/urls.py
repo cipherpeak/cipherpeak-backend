@@ -18,17 +18,5 @@ urlpatterns = [
     #delete event
     path('events/<int:id>/delete/', views.EventDeleteView.as_view(), name='event-delete'),
 
-
-
-
-
-
-    path('events/<int:id>/status/', views.EventStatusUpdateView.as_view(), name='event-status-update'),
-    path('events/stats/', views.EventStatsView.as_view(), name='event-stats'),
-    path('events/my-events/', views.MyEventsView.as_view(), name='my-events'),
-    path('events/created-by-me/', views.EventsCreatedByMeView.as_view(), name='events-created-by-me'),
-    path('events/employee/<int:employee_id>/', views.EmployeeEventsView.as_view(), name='employee-events'),
-    path('events/calendar/', views.CalendarEventsView.as_view(), name='calendar-events'),
-
-    
+  
 ]

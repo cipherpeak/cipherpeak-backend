@@ -1,4 +1,3 @@
-# client/urls.py
 from django.urls import path
 from . import views
 
@@ -18,18 +17,19 @@ urlpatterns = [
     #client upload document URL
     path('clients/<int:id>/upload-document/', views.ClientDocumentUploadView.as_view(), name='client-upload-document'),
 
+    #client document delete url
+    path('client-documents/<int:pk>/delete/', views.ClientDocumentDeleteView.as_view(), name='delete_client_document'),
+    
     #client delete url
     path('clients/delete/<int:id>/', views.ClientDeleteView.as_view(), name='delete_client'),
 
 
-    #client mark payment url
-    
+    #client admin note url
     path('clients/<int:id>/admin-note/', views.ClientAdminNoteView.as_view(), name='client-admin-note'),
     path('clients/<int:id>/admin-note/create/', views.ClientAdminNoteCreateView.as_view(), name='client-admin-note-create'),
 
-
-    #client process payment url
-    path('clients/process-salary-payment/', views.ClientPaymentView.as_view(), name='salary-payment'),
-    path('clients/process-salary-payment/<int:id>/', views.ClientPaymentProcessView.as_view(), name='process-salary-payment')
- 
+    # New client payment endpoints
+    path('clients/<int:pk>/process-payment/', views.ProcessClientPaymentView.as_view(), name='process-client-payment'),
+    path('clients/<int:client_id>/payment-history/', views.ClientPaymentHistoryListView.as_view(), name='client-payment-history'),
+    path('clients/<int:id>/payment-detail/', views.ClientPaymentDetailView.as_view(), name='client-payment-detail'),
 ]
