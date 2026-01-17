@@ -8,3 +8,4 @@ pip-chill==1.0.3
 psycopg2-binary==2.9.10
 PyJWT==2.10.1
 sqlparse==0.5.3
+python-decouple

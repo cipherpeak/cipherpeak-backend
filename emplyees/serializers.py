@@ -6,11 +6,11 @@ from django.contrib.auth import authenticate
 
 #login serializer
 class LoginSerializer(serializers.Serializer):
-    login = serializers.CharField()
+    username = serializers.CharField()
     password = serializers.CharField()
 
     def validate(self, data):
-        login_value = data.get('login')
+        login_value = data.get('username')
         password = data.get('password')
         
         if login_value and password:
