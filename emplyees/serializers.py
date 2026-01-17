@@ -1,20 +1,30 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, AdminNote,LeaveBalance
 from django.contrib.auth import authenticate
 
 
 
 #login serializer
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    login = serializers.CharField()
     password = serializers.CharField()
 
     def validate(self, data):
-        username = data.get('username')
+        login_value = data.get('login')
         password = data.get('password')
         
-        if username and password:
-            user = authenticate(username=username, password=password)
+        if login_value and password:
+            # Try to authenticate with username
+            user = authenticate(username=login_value, password=password)
+            
+            # If username authentication fails, try with email
+            if not user:
+                try:
+                    user_obj = CustomUser.objects.get(email=login_value)
+                    user = authenticate(username=user_obj.username, password=password)
+                except CustomUser.DoesNotExist:
+                    user = None
+
             if user:
                 if user.is_active:
                     data['user'] = user
@@ -23,7 +33,7 @@ class LoginSerializer(serializers.Serializer):
             else:
                 raise serializers.ValidationError('Unable to log in with provided credentials.')
         else:
-            raise serializers.ValidationError('Must include username and password.')
+            raise serializers.ValidationError('Must include login (username or email) and password.')
         return data
 
 
@@ -36,8 +46,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'phone_number', 'role', 'current_status', 'department',
-            'designation', 'employee_id','profile_image', 'profile_image_url',
-            
+            'designation','profile_image_url',
         ]
         read_only_fields = ['created_at', 'updated_at']
     
@@ -77,8 +86,10 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
             'salary',
             'current_status',
             'joining_date',
-            'profile_image',  # Add profile_image here
+            'profile_image',  
+            'password',
         ]
+
         extra_kwargs = {
             'username': {'required': True},
             'email': {'required': True},
@@ -87,11 +98,11 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
             'role': {'required': True},
             'current_status': {'required': True},
             'joining_date': {'required': True},
-            'profil e_image': {'required': False},  # Make profile_image optional
+            'profile_image': {'required': False},
+            'password': {'write_only': True, 'required': True},
         }
 
     def validate_username(self, value):
-        
         if len(value) < 3:
             raise serializers.ValidationError("Username must be at least 3 characters long.")
         return value
@@ -113,14 +124,11 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_profile_image(self, value):
-        """Validate profile image file"""
+        
         if value:
-            # Check file size (e.g., 5MB limit)
-            max_size = 5 * 1024 * 1024  # 5MB
+            max_size = 5 * 1024 * 1024  
             if value.size > max_size:
                 raise serializers.ValidationError("Profile image size cannot exceed 5MB.")
-            
-            # Check file type
             valid_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp']
             extension = value.name.split('.')[-1].lower()
             if extension not in valid_extensions:
@@ -187,14 +195,11 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_profile_image(self, value):
-        """Validate profile image file"""
         if value:
-            # Check file size (e.g., 5MB limit)
-            max_size = 5 * 1024 * 1024  # 5MB
+            max_size = 5 * 1024 * 1024  
             if value.size > max_size:
                 raise serializers.ValidationError("Profile image size cannot exceed 5MB.")
             
-            # Check file type
             valid_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp']
             extension = value.name.split('.')[-1].lower()
             if extension not in valid_extensions:
@@ -204,42 +209,77 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
-#employee document serializer
+#employee document serializer (for reading)
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeDocument
         fields = [
-            'id', 'document_type','file_url'
+            'id', 'document_type', 'file_url', 'uploaded_at'
         ]
         
     def get_file_url(self, obj):
         if obj.file:
+            request = self.context.get('request')
+            if request is not None:
+                return request.build_absolute_uri(obj.file.url)
             return obj.file.url
         return None
 
 
-#employee media serializer
+#employee document create serializer (for uploading)
+class EmployeeDocumentCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeDocument
+        fields = ['document_type', 'file']
+        
+    def validate_file(self, value):
+        if value:
+            max_size = 10 * 1024 * 1024  # 10MB
+            if value.size > max_size:
+                raise serializers.ValidationError("Document size cannot exceed 10MB.")
+        return value
+
+
+#employee media serializer (for reading)
 class EmployeeMediaSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeMedia
         fields = [
-            'id', 'media_type','file_url'
+            'id', 'media_type', 'file_url', 'uploaded_at'
         ]
        
     def get_file_url(self, obj):
         if obj.file:
+            request = self.context.get('request')
+            if request is not None:
+                return request.build_absolute_uri(obj.file.url)
             return obj.file.url
         return None
+
+
+#employee media create serializer (for uploading)
+class EmployeeMediaCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeMedia
+        fields = ['media_type', 'file']
+        
+    def validate_file(self, value):
+        if value:
+            max_size = 10 * 1024 * 1024  # 10MB
+            if value.size > max_size:
+                raise serializers.ValidationError("Media file size cannot exceed 10MB.")
+        return value
 
 #Leave list serializer
 class LeaveListSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(
         source='employee.get_full_name', read_only=True
     )
+    employee_id = serializers.IntegerField(source='employee.id', read_only=True)
     approved_by_name = serializers.CharField(
         source='approved_by.get_full_name', read_only=True
     )
@@ -247,27 +287,53 @@ class LeaveListSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveManagement
         fields = [
-            'id',
-            'employee_name',
-            'category',
-            'start_date',
-            'end_date',
-            'total_days',
-            'status',
-            'approved_by_name',
-            'created_at',
+            'id', 'employee_name', 'employee_id', 'category', 'start_date', 'end_date',
+            'total_days', 'reason', 'status', 'created_at',
+            'approved_by_name', 'approved_at', 'remarks', 'attachment'
         ]
 
 
-#salary history serializer
-class SalaryHistorySerializer(serializers.ModelSerializer):
+# SalaryPayment serializer
+class SalaryPaymentSerializer(serializers.ModelSerializer):
+    processed_by_name = serializers.CharField(source='processed_by.get_full_name', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
     class Meta:
-        model = SalaryHistory
+        model = SalaryPayment
         fields = [
-            'id', 'salary', 'incentive',
-            'reason', 'created_at', 'updated_at'
+            'id', 'employee', 'month', 'year',
+            'base_salary', 'incentives', 'deductions', 'net_amount',
+            'scheduled_date', 'payment_date', 'status', 'status_display',
+            'payment_method', 'processed_by', 'processed_by_name', 'remarks'
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'net_amount']
+
+
+#admin note serializer
+class AdminNoteSerializer(serializers.ModelSerializer):
+    created_by = serializers.CharField(source='created_by.employee_id', read_only=True)
+    created_by_role = serializers.CharField(source='created_by.role', read_only=True)
+    
+    class Meta:
+        model = AdminNote
+        fields = [
+            'id',
+            'employee',
+            'note',
+            'created_by',
+            'created_by',
+            'created_by_role',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+
+#admin note 
+class AdminNoteCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AdminNote
+        fields = ['employee', 'note']
 
 
 #employee detail serializer
@@ -275,69 +341,108 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
     media_files = EmployeeMediaSerializer(many=True, read_only=True)
     leave_records = LeaveListSerializer(source='leaves', many=True, read_only=True)
-    salary_history = SalaryHistorySerializer(many=True, read_only=True)
+    salary_payment_history = SalaryPaymentSerializer(source='salary_payments', many=True, read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
-    
+    admin_notes = AdminNoteSerializer(many=True, read_only=True)
+    salary = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     class Meta:
         model = CustomUser
         fields = [
             'id','email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'role', 'salary', 'salary_payment', 'payment_status', 'current_status', 'joining_date',
+            'phone_number', 'role', 'salary', 'payment_status', 'current_status', 'joining_date',
             'employee_id', 'department', 'designation', 'profile_image', 
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
-            'documents', 'media_files', 'leave_records', 'salary_history',    
+            'documents', 'media_files', 'leave_records', 'salary_payment_history',
+            'admin_notes',    
         ]
-    
     def get_payment_status(self, obj):
         from django.utils import timezone
         import calendar
-        
-        today = timezone.now().date()
-        
-        # Check if salary history exists for current month and year
-        has_paid = obj.salary_history.filter(
-            created_at__year=today.year, 
-            created_at__month=today.month
-        ).exists()
-        
-        if has_paid:
-            return "Paid"
-            
-        today = timezone.now().date()
+        from datetime import date
+
         if not obj.joining_date:
             return "Unknown"
-            
-        joining_day = obj.joining_date.day
+
+        today = timezone.now().date()
         
-        # Calculate payment due date for current month
-        try:
-            payment_due_date = today.replace(day=joining_day)
-        except ValueError:
-            # Handle shorter months
-            last_day = calendar.monthrange(today.year, today.month)[1]
-            payment_due_date = today.replace(day=last_day)
+        current_date_iter = date(obj.joining_date.year, obj.joining_date.month, 1)
+        
+        end_date = date(today.year, today.month, 1)
+        
+        target_month = None
+        target_year = None
+        
+        while current_date_iter <= end_date:
+            m = current_date_iter.month
+            y = current_date_iter.year
             
+            is_paid = SalaryPayment.objects.filter(
+                employee=obj,
+                month=m,
+                year=y,
+                status__in=['paid', 'early_paid']
+            ).exists()
+            
+            if not is_paid:
+                target_month = m
+                target_year = y
+                break
+            
+            if current_date_iter.month == 12:
+                current_date_iter = date(current_date_iter.year + 1, 1, 1)
+            else:
+                current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
+
+        if not target_month:
+            current_payroll = SalaryPayment.objects.filter(
+                employee=obj,
+                month=today.month,
+                year=today.year,
+                status='early_paid'
+            ).exists()
+            
+            next_month = (today.month % 12) + 1
+            next_year = today.year + (1 if today.month == 12 else 0)
+            next_payroll_is_early = SalaryPayment.objects.filter(
+                employee=obj,
+                month=next_month,
+                year=next_year,
+                status='early_paid'
+            ).exists()
+
+            if current_payroll or next_payroll_is_early:
+                return "Early Salary Paid"
+            return "Salary Paid"
+
+        _, last_day_target_month = calendar.monthrange(target_year, target_month)
+        payment_due_date = date(target_year, target_month, last_day_target_month)
+        
         days_diff = (payment_due_date - today).days
+
+        if days_diff < 0:
+            return "Overdue"
+        elif days_diff == 0:
+            return "Pay Salary"
+        elif 0 < days_diff <= 7:
+            return "Payment date coming soon"
         
-        if days_diff <= 0:
-            return "Payment Due" # Date passed for this month or is today
-        elif days_diff <= 5:
-            return "Payment date reaching soon"
-        else:
-            return "Pending"
+        return None
+
+       
+
     
     def get_profile_image_url(self, obj):
-        """Get the full URL for the profile image"""
         if obj.profile_image and hasattr(obj.profile_image, 'url'):
             request = self.context.get('request')
             if request is not None:
                 return request.build_absolute_uri(obj.profile_image.url)
             return obj.profile_image.url
         return None
+
 
 # camera department list serializer
 class CameraDepartmentListSerializer(serializers.ModelSerializer):
@@ -408,36 +513,117 @@ class LeaveDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-
-
-
-
-
-
-
-
-
-# Update your existing UserSerializer
-class UserSerializer(serializers.ModelSerializer):
-    profile_image_url = serializers.SerializerMethodField()  # Add this field
+#leave update serializer
+class LeaveUpdateSerializer(serializers.ModelSerializer):
     class Meta:
-        model = CustomUser
+        model = LeaveManagement
         fields = [
-            'id', 'email','phone_number', 'role', 'current_status', 'department',
-            'designation', 'employee_id', 'joining_date', 'salary',
-            'date_of_birth', 'gender', 'address', 'city', 'state',
-            'postal_code', 'country', 'emergency_contact_name',
-            'emergency_contact_phone', 'emergency_contact_relation',
-            'profile_image', 'profile_image_url', 
-            'created_at', 'updated_at'
+            'category', 
+            'start_date', 
+            'end_date', 
+            'total_days', 
+            'reason', 
+            'address_during_leave', 
+            'attachment',
+            'status', 
+            'remarks',
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['employee', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        return data
+
+
+#payment detail serializer
+class PaymentDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalaryPayment
+        fields = '__all__'
+
+
+class LeaveApprovalRejectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveManagement
+        fields = [
+            'status',
+            'remarks',
+            
+            
+        ]
+
+
+class LeaveBalanceSerializer(serializers.ModelSerializer):
+    annual_used = serializers.SerializerMethodField()
+    casual_used = serializers.SerializerMethodField()
+    sick_used = serializers.SerializerMethodField()
     
-    def get_profile_image_url(self, obj):
-        """Get the full URL for the profile image"""
-        if obj.profile_image and hasattr(obj.profile_image, 'url'):
-            request = self.context.get('request')
-            if request is not None:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
-        return None
+    annual_remaining = serializers.SerializerMethodField()
+    casual_remaining = serializers.SerializerMethodField()
+    sick_remaining = serializers.SerializerMethodField()
+    
+    total_balance = serializers.SerializerMethodField()
+    leaves_used = serializers.SerializerMethodField()
+    pending_requests = serializers.SerializerMethodField()
+    upcoming_leaves = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LeaveBalance
+        fields = [
+            'annual_total', 'casual_total', 'sick_total', 'year',
+            'annual_used', 'casual_used', 'sick_used',
+            'annual_remaining', 'casual_remaining', 'sick_remaining',
+            'total_balance', 'leaves_used', 'pending_requests', 'upcoming_leaves'
+        ]
+
+    def get_used_days(self, obj, category):
+        from django.db.models import Sum
+        from .models import LeaveManagement
+        
+        year = obj.year
+        used = LeaveManagement.objects.filter(
+            employee=obj.employee,
+            category=category,
+            status='approved',
+            created_at__year=year
+        ).aggregate(Sum('total_days'))['total_days__sum'] or 0
+        return float(used)
+
+    def get_annual_used(self, obj):
+        return self.get_used_days(obj, 'Annual Leave')
+
+    def get_casual_used(self, obj):
+        return self.get_used_days(obj, 'Casual Leave')
+
+    def get_sick_used(self, obj):
+        return self.get_used_days(obj, 'Sick Leave')
+
+    def get_annual_remaining(self, obj):
+        return float(obj.annual_total) - self.get_annual_used(obj)
+
+    def get_casual_remaining(self, obj):
+        return float(obj.casual_total) - self.get_casual_used(obj)
+
+    def get_sick_remaining(self, obj):
+        return float(obj.sick_total) - self.get_sick_used(obj)
+
+    def get_total_balance(self, obj):
+        return self.get_annual_remaining(obj) + self.get_casual_remaining(obj) + self.get_sick_remaining(obj)
+
+    def get_leaves_used(self, obj):
+        return self.get_annual_used(obj) + self.get_casual_used(obj) + self.get_sick_used(obj)
+
+    def get_pending_requests(self, obj):
+        from .models import LeaveManagement
+        return LeaveManagement.objects.filter(
+            employee=obj.employee,
+            status='pending',
+            created_at__year=obj.year
+        ).count()
+
+    def get_upcoming_leaves(self, obj):
+        from .models import LeaveManagement
+        return LeaveManagement.objects.filter(
+            employee=obj.employee,
+            status='approved',
+            created_at__year=obj.year
+        ).count()

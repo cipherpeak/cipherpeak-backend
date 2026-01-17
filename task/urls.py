@@ -18,16 +18,5 @@ urlpatterns = [
     #delete task
     path('task/<int:id>/delete/', views.TaskDeleteView.as_view(), name='delete_task'),  
 
-
-
-
-
-
-    path('create/<int:id>/status/', views.TaskStatusUpdateView.as_view(), name='task-status-update'),
-    path('stats/', views.TaskStatsView.as_view(), name='task-stats'),
-    path('my-tasks/', views.MyTasksView.as_view(), name='my-tasks'),
-    path('created-by-me/', views.TasksCreatedByMeView.as_view(), name='tasks-created-by-me'),
-
-
     
 ]

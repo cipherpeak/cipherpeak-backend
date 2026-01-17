@@ -1,12 +1,12 @@
 from rest_framework import serializers
 from .models import Task
 from emplyees.models import CustomUser
-from clientapp.serializers import ClientSerializer  # Import your ClientSerializer
+from clientapp.serializers import ClientSerializer  
 
-
+#assignee serializer
 class AssigneeSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
-    designation = serializers.CharField(source='get_designation_display', read_only=True)
+    designation = serializers.CharField(read_only=True)
     department = serializers.CharField(read_only=True)
     
     class Meta:
@@ -26,7 +26,8 @@ class AssigneeSerializer(serializers.ModelSerializer):
         ]
        
     def get_full_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}".strip()
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
 
 
 # task create serializer
@@ -34,6 +35,7 @@ class TaskCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
+            'id',
             'title', 
             'description', 
             'assignee', 
@@ -42,8 +44,11 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             'priority',
             'task_type', 
             'due_date', 
-            'scheduled_date'
+            'scheduled_date',
+            'created_at',
+            'updated_at'
         ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 # task update serializer
@@ -51,6 +56,7 @@ class TaskUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
+            'id',
             'title',
             'description',
             'assignee',
@@ -61,7 +67,7 @@ class TaskUpdateSerializer(serializers.ModelSerializer):
             'due_date',
             'scheduled_date'
         ]
-        read_only_fields = ['created_by']
+        read_only_fields = ['id']
 
 
 # task detail serializer
@@ -94,17 +100,18 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'completed_at', 
             'created_by', 
             'created_by_details', 
-           
-            
+            'created_at',
+            'updated_at'
         ]
        
 
-
 # task list serializer
 class TaskListSerializer(serializers.ModelSerializer):
+    assignee_details = AssigneeSerializer(source='assignee', read_only=True)
+    client_details = ClientSerializer(source='client', read_only=True)
     assignee_name = serializers.SerializerMethodField()
     assignee_designation = serializers.CharField(source='assignee.designation', read_only=True)
-    client_name = serializers.CharField(source='client.client_name', read_only=True)  # Added client name
+    client_name = serializers.CharField(source='client.client_name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
     is_overdue = serializers.SerializerMethodField()
@@ -114,70 +121,33 @@ class TaskListSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'description',
+            'assignee',
+            'assignee_details',
+            'client',
+            'client_details',
             'status',
             'status_display',
             'priority',
             'priority_display',
+            'task_type',
             'due_date',
+            'scheduled_date',
             'assignee_name',
             'assignee_designation',
-            'client_name',  
-            'is_overdue'
+            'client_name',
+            'is_overdue',
+            'created_at'
         ]
     
     def get_assignee_name(self, obj):
-        return f"{obj.assignee.first_name} {obj.assignee.last_name}".strip()
+        if obj.assignee:
+            name = f"{obj.assignee.first_name} {obj.assignee.last_name}".strip()
+            return name if name else obj.assignee.username
+        return "Unassigned"
     
     def get_is_overdue(self, obj):
         from django.utils import timezone
         return obj.due_date < timezone.now() and obj.status != 'completed'
 
 
-
-
-
-
-
-
-
-
-
-# task serializer
-class TaskSerializer(serializers.ModelSerializer):
-    assignee_details = AssigneeSerializer(source='assignee', read_only=True)
-    created_by_details = AssigneeSerializer(source='created_by', read_only=True)
-    client_details = ClientSerializer(source='client', read_only=True)  # Added client details
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    task_type_display = serializers.CharField(source='get_task_type_display', read_only=True)
-    
-    class Meta:
-        model = Task
-        fields = [
-            'id', 
-            'title', 
-            'description', 
-            'assignee', 
-            'assignee_details',
-            'client',  
-            'client_details', 
-            'status', 
-            'status_display',
-            'priority', 
-            'priority_display',
-            'task_type',
-            'task_type_display',
-            'due_date', 
-            'scheduled_date',
-            'completed_at', 
-            'created_by', 
-            'created_by_details', 
-            'created_at',
-            'updated_at','is_deleted',
-            'deleted_at',
-        ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at', 'completed_at', 'is_deleted', 'deleted_at']
-
-
-class TaskStatusUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=Task.STATUS_CHOICES)

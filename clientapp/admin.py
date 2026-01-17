@@ -1,12 +1,18 @@
-# client/admin.py
 from django.contrib import admin
-from .models import Client, ClientDocument
+from .models import Client, ClientDocument, ClientAdminNote, ClientPayment
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    """Admin configuration for Client model"""
     
-    # Fields to display in the list view
+    class ClientPaymentInline(admin.TabularInline):
+        model = ClientPayment
+        extra = 0
+        readonly_fields = ['created_at', 'updated_at', 'net_amount']
+        fields = ['month', 'year', 'amount', 'tax_amount', 'discount', 'net_amount', 'scheduled_date', 'status', 'payment_date', 'payment_method']
+        ordering = ['-year', '-month']
+
+    inlines = [ClientPaymentInline]
+    
     list_display = [
         'client_name', 
         'client_type', 
@@ -21,7 +27,6 @@ class ClientAdmin(admin.ModelAdmin):
         'created_at'
     ]
     
-    # Fields that can be used for filtering
     list_filter = [
         'client_type',
         'industry', 
@@ -32,7 +37,6 @@ class ClientAdmin(admin.ModelAdmin):
         'created_at'
     ]
     
-    # Fields that can be searched
     search_fields = [
         'client_name',
         'owner_name',
@@ -42,10 +46,8 @@ class ClientAdmin(admin.ModelAdmin):
         'description'
     ]
     
-    # Fields that are read-only
     readonly_fields = ['created_at', 'updated_at', 'total_content_per_month', 'is_active_client', 'contract_duration']
     
-    # Fields to display in the detail view with organization
     fieldsets = (
         ('Basic Information', {
             'fields': (
@@ -73,7 +75,7 @@ class ClientAdmin(admin.ModelAdmin):
                 'linkedin_url',
                 'twitter_handle'
             ),
-            'classes': ('collapse',)  # Makes this section collapsible
+            'classes': ('collapse',) 
         }),
         ('Content Requirements', {
             'fields': (
@@ -124,32 +126,27 @@ class ClientAdmin(admin.ModelAdmin):
         }),
     )
     
-    # Prepopulated fields
     prepopulated_fields = {}
     
-    # Date-based hierarchy for navigation
     date_hierarchy = 'created_at'
     
-    # Default ordering
     ordering = ['-created_at']
     
-    # Actions you can perform on multiple clients
     actions = ['mark_as_active', 'mark_as_inactive']
     
     def mark_as_active(self, request, queryset):
-        """Custom action to mark clients as active"""
+
         updated = queryset.update(status='active')
         self.message_user(request, f'{updated} clients were marked as active.')
     
     def mark_as_inactive(self, request, queryset):
-        """Custom action to mark clients as inactive"""
+    
         updated = queryset.update(status='inactive')
         self.message_user(request, f'{updated} clients were marked as inactive.')
     
     mark_as_active.short_description = "Mark selected clients as Active"
     mark_as_inactive.short_description = "Mark selected clients as Inactive"
     
-    # Display computed properties in list view
     def total_content_per_month(self, obj):
         return obj.total_content_per_month
     total_content_per_month.short_description = 'Total Content/Month'
@@ -157,16 +154,13 @@ class ClientAdmin(admin.ModelAdmin):
     def is_active_client(self, obj):
         return obj.is_active_client
     is_active_client.short_description = 'Active'
-    is_active_client.boolean = True  # Shows as checkbox
+    is_active_client.boolean = True 
 
 
 @admin.register(ClientDocument)
 class ClientDocumentAdmin(admin.ModelAdmin):
-    """Admin configuration for ClientDocument model"""
     
-    # Fields to display in the list view
     list_display = [
-        'title',
         'client',
         'document_type',
         'uploaded_by',
@@ -174,7 +168,6 @@ class ClientDocumentAdmin(admin.ModelAdmin):
         'get_file_name'
     ]
     
-    # Fields that can be used for filtering
     list_filter = [
         'document_type',
         'client',
@@ -182,26 +175,19 @@ class ClientDocumentAdmin(admin.ModelAdmin):
         'uploaded_by'
     ]
     
-    # Fields that can be searched
     search_fields = [
-        'title',
-        'description',
         'client__client_name',
         'uploaded_by__username'
     ]
     
-    # Fields that are read-only
     readonly_fields = ['uploaded_at', 'uploaded_by', 'uploaded_at']
     
-    # Fields to display in the detail view
     fieldsets = (
         ('Document Information', {
             'fields': (
                 'client',
                 'document_type',
-                'title',
                 'file',
-                'description'
             )
         }),
         ('Upload Information', {
@@ -212,19 +198,42 @@ class ClientDocumentAdmin(admin.ModelAdmin):
         }),
     )
     
-    # Date-based hierarchy for navigation
     date_hierarchy = 'uploaded_at'
     
-    # Default ordering
     ordering = ['-uploaded_at']
     
-    # Automatically set the uploaded_by field
     def save_model(self, request, obj, form, change):
-        if not obj.pk:  # Only set uploaded_by when creating, not updating
+        if not obj.pk:  
             obj.uploaded_by = request.user
         super().save_model(request, obj, form, change)
     
-    # Custom method to display file name
     def get_file_name(self, obj):
         return obj.file.name if obj.file else "No file"
     get_file_name.short_description = 'File Name'
+
+   
+@admin.register(ClientAdminNote)
+class ClientAdminNoteAdmin(admin.ModelAdmin):
+    list_display = [
+        'client',
+        'note',
+        'created_at',
+        'updated_at'
+    ]
+        
+
+@admin.register(ClientPayment)
+class ClientPaymentAdmin(admin.ModelAdmin):
+    list_display = [
+        'client',
+        'month',
+        'year',
+        'amount',
+        'status',
+        'payment_date',
+        'processed_by',
+        'created_at'
+    ]
+    list_filter = ['status', 'month', 'year', 'payment_method']
+    search_fields = ['client__client_name', 'transaction_id']
+    readonly_fields = ['created_at', 'updated_at', 'net_amount']

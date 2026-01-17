@@ -7,16 +7,18 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryHistory, CameraDepartment
+from datetime import date
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
     EmployeeUpdateSerializer,
     LoginSerializer, 
     EmployeeDetailSerializer,
-    EmployeeDocumentSerializer, 
+    EmployeeDocumentSerializer,
+    EmployeeDocumentCreateSerializer,
     EmployeeMediaSerializer,
-    SalaryHistorySerializer,
+    EmployeeMediaCreateSerializer,
     EmployeeListSerializer,
     CameraDepartmentListSerializer,
     CameraDepartmentCreateSerializer,
@@ -24,6 +26,13 @@ from .serializers import (
     LeaveCreateSerializer,
     LeaveListSerializer,
     LeaveDetailSerializer,
+    AdminNoteCreateSerializer,
+    AdminNoteSerializer,
+    LeaveUpdateSerializer,
+    LeaveUpdateSerializer,
+    SalaryPaymentSerializer,
+    PaymentDetailSerializer,
+    LeaveApprovalRejectSerializer
 )
 
 # login view 
@@ -41,7 +50,19 @@ class LoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-        
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"message": "Successfully logged out"}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 # Employee listing view
 class EmployeeListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -49,7 +70,6 @@ class EmployeeListView(APIView):
     def get(self, request):
         employees = CustomUser.objects.filter(is_superuser=False,is_active=True).select_related()
         
-        # Optional query parameters for filtering
         role = request.GET.get('role')
         status_filter = request.GET.get('status')
         department = request.GET.get('department')
@@ -68,7 +88,6 @@ class EmployeeListView(APIView):
         })
 
 
-
 # Create employee view
 class EmployeeCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -76,7 +95,6 @@ class EmployeeCreateView(APIView):
 
     def post(self, request):
         try:
-            # Check if user has permission to create employees
             if not request.user.is_superuser and request.user.role not in ['director', 'managing_director']:
                 return Response (
                     {'error': 'You do not have permission to create employees'},
@@ -86,7 +104,6 @@ class EmployeeCreateView(APIView):
             serializer = EmployeeCreateSerializer(data=request.data)
             
             if serializer.is_valid():
-                # Check if username or email already exists
                 username = serializer.validated_data.get('username')
                 email = serializer.validated_data.get('email')
                 
@@ -102,12 +119,11 @@ class EmployeeCreateView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Create the user with all data including profile_image
                 try:
                     employee_data = {
                         'username': username,
                         'email': email,
-                        'password': 'defaultpassword123',  # Default password
+                        'password': serializer.validated_data.get('password'), 
                         'first_name': serializer.validated_data.get('first_name', ''),
                         'last_name': serializer.validated_data.get('last_name', ''),
                         'phone_number': serializer.validated_data.get('phone_number'),
@@ -128,16 +144,15 @@ class EmployeeCreateView(APIView):
                         'salary': serializer.validated_data.get('salary'),
                         'current_status': serializer.validated_data.get('current_status', 'active'),
                         'joining_date': serializer.validated_data.get('joining_date'),
+                        'is_active': True,
                     }
                     
-                    # Add profile_image if it exists in the request
                     if 'profile_image' in request.FILES:
                         employee_data['profile_image'] = request.FILES['profile_image']
                         print("Profile image found and added to employee data")
                     
                     employee = CustomUser.objects.create_user(**employee_data)
                     
-                    # Return the created employee data with profile image URL
                     return Response(
                         {
                             'message': 'Employee created successfully',
@@ -167,7 +182,6 @@ class EmployeeCreateView(APIView):
             )
     
 
-    
 # Update employee view
 class EmployeeUpdateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -181,7 +195,6 @@ class EmployeeUpdateView(APIView):
 
     def update(self, request, employee_id, partial=False):
         try:
-            # Check if user has permission to update employees
             if not request.user.is_superuser and request.user.role not in ['director', 'managing_director', 'manager']:
                 return Response(
                     {'error': 'You do not have permission to update employees'},
@@ -203,7 +216,6 @@ class EmployeeUpdateView(APIView):
             )
             
             if serializer.is_valid():
-                # Check for unique fields if they're being updated
                 if 'username' in request.data:
                     new_username = request.data['username']
                     if CustomUser.objects.filter(username=new_username).exclude(id=employee_id).exists():
@@ -244,14 +256,13 @@ class EmployeeUpdateView(APIView):
             )
 
 
-
 #employee detail view   
 class EmployeeDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, employee_id)  :
         try:
-            # Try to get by ID first, then by username
+            
             if employee_id:
                 employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
             else:
@@ -262,18 +273,16 @@ class EmployeeDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Prefetch related data for better performance
         employee = CustomUser.objects.filter(id=employee.id).prefetch_related(
             Prefetch('documents', queryset=EmployeeDocument.objects.all()),
             Prefetch('media_files', queryset=EmployeeMedia.objects.all()),
             Prefetch('leaves', queryset=LeaveManagement.objects.all().order_by('-start_date')),
-            Prefetch('salary_history', queryset=SalaryHistory.objects.all().order_by('-created_at'))
+            Prefetch('salary_payments', queryset=SalaryPayment.objects.all().order_by('-created_at'))
         ).first()
         
         serializer = EmployeeDetailSerializer(employee, context={'request': request})
         
         return Response(serializer.data)
-
 
 
 # Delete employee view 
@@ -283,7 +292,7 @@ class EmployeeDeleteView(APIView):
     def delete(self, request, employee_id):
         print("Delete employee called for ID:", employee_id)
         try:
-            # Check if user has permission to delete employees
+           
             if not request.user.is_superuser and request.user.role not in ['director', 'managing_director']:
                 return Response(
                     {'error': 'You do not have permission to delete employees'},
@@ -298,7 +307,6 @@ class EmployeeDeleteView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Prevent users from deleting themselves
             if employee.id == request.user.id:
                 return Response(
                     {'error': 'You cannot delete your own account'},
@@ -308,7 +316,6 @@ class EmployeeDeleteView(APIView):
            
             employee.is_active = False
             employee.save()
-            
             
             return Response(
                 {'message': 'Employee deleted successfully'},
@@ -322,17 +329,14 @@ class EmployeeDeleteView(APIView):
             )
 
 
-
 #employee document upload view
-class EmployeeDocumentListCreateView(APIView):
+class EmployeeDocumentCreateView(APIView):
     
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     
     def post(self, request, employee_id):
-        """
-        Create a new document for the specified employee
-        """
+    
         try:
             employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
         except CustomUser.DoesNotExist:
@@ -341,8 +345,6 @@ class EmployeeDocumentListCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Check if user has permission to upload documents for this employee
-        # Allow admins or the employee themselves to upload
         if not request.user.is_superuser and request.user.role not in ['director', 'managing_director'] and request.user.id != employee.id:
             return Response (
                 {'error': 'You do not have permission to upload documents for this employee'},
@@ -350,10 +352,10 @@ class EmployeeDocumentListCreateView(APIView):
             )
 
         data = request.data.copy()
-        serializer = EmployeeDocumentSerializer(data=data, context={'request': request})
+        serializer = EmployeeDocumentCreateSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
-            # Save with targeted employee
+            
             document = serializer.save(user=employee)
             
             return Response({
@@ -368,16 +370,14 @@ class EmployeeDocumentListCreateView(APIView):
         }, status=status.HTTP_400_BAD_REQUEST)
     
 
-
-class EmployeeMediaListCreateView(APIView):
+#employee media list create view
+class EmployeeMediaCreateView(APIView):
    
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     
     def post(self, request, employee_id):
-        """
-        Create a new media file for the specified employee
-        """
+        
         try:
             employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
         except CustomUser.DoesNotExist:
@@ -386,7 +386,6 @@ class EmployeeMediaListCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Check if user has permission to upload media for this employee
         if not request.user.is_superuser and request.user.role not in ['superuser', 'admin'] and request.user.id != employee.id:
             return Response (
                 {'error': 'You do not have permission to upload media for this employee'},
@@ -394,10 +393,10 @@ class EmployeeMediaListCreateView(APIView):
             )
 
         data = request.data.copy()
-        serializer = EmployeeMediaSerializer(data=data, context={'request': request})
+        serializer = EmployeeMediaCreateSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
-            # Save with targeted employee
+            
             media = serializer.save(user=employee)
             
             return Response({
@@ -409,15 +408,74 @@ class EmployeeMediaListCreateView(APIView):
             'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
-    
 
+
+# Employee document delete view
+class EmployeeDocumentDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            document = EmployeeDocument.objects.get(pk=pk)
+        except EmployeeDocument.DoesNotExist:
+            return Response(
+                {'error': 'Document not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permissions: owner or admin/hr/director
+        is_owner = request.user == document.user
+        is_admin = request.user.is_superuser or request.user.role in ['director', 'managing_director', 'admin', 'hr']
+
+        if not (is_owner or is_admin):
+             return Response(
+                {'error': 'You do not have permission to delete this document'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        document.delete()
+        return Response(
+            {'message': 'Document deleted successfully'},
+            status=status.HTTP_200_OK
+        )
+
+
+# Employee media delete view
+class EmployeeMediaDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            media = EmployeeMedia.objects.get(pk=pk)
+        except EmployeeMedia.DoesNotExist:
+            return Response(
+                {'error': 'Media file not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permissions: owner or admin/hr/director
+        is_owner = request.user == media.user
+        is_admin = request.user.is_superuser or request.user.role in ['director', 'managing_director', 'admin', 'hr']
+
+        if not (is_owner or is_admin):
+             return Response(
+                {'error': 'You do not have permission to delete this media file'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        media.delete()
+        return Response(
+            {'message': 'Media file deleted successfully'},
+            status=status.HTTP_200_OK
+        )
+    
 
 #camera department list view
 class CameraDepartmentListView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        # Permission check for listing
+        
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
             'camera_department', 'hr', 'manager', 'content_creator', 'editor'
         ]:
@@ -427,8 +485,6 @@ class CameraDepartmentListView(APIView):
             )
 
         projects = CameraDepartment.objects.all().select_related('client')
-        
-        # Filter by client if provided
         client_id = request.GET.get('client')
         if client_id:
             projects = projects.filter(client_id=client_id)
@@ -437,13 +493,12 @@ class CameraDepartmentListView(APIView):
         return Response(serializer.data)
 
 
-
 #camera department create view
 class CameraDepartmentCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # Permission check for creation
+        
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
             'camera_department', 'content_creator', 'manager', 'hr'
         ]:
@@ -457,7 +512,6 @@ class CameraDepartmentCreateView(APIView):
             serializer.save(employee=request.user)
             return Response("project created successfully", status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 #camera department detail view
@@ -483,7 +537,6 @@ class CameraDepartmentDetailView(APIView):
         if not project:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Permission check for update
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
             'camera_department', 'content_creator', 'manager', 'hr'
         ]:
@@ -502,7 +555,7 @@ class CameraDepartmentDetailView(APIView):
 #Leave create view 
 class LeaveCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
         serializer = LeaveCreateSerializer(
@@ -515,6 +568,7 @@ class LeaveCreateView(APIView):
                 {'message': 'Leave applied successfully'},
                 status=status.HTTP_201_CREATED
             )
+        print("Leave serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -524,6 +578,7 @@ class LeaveListView(APIView):
 
     def get(self, request):
         user = request.user
+        status_filter = request.query_params.get('status')
 
         if user.role in ['manager', 'hr', 'admin', 'director']:
             leaves = LeaveManagement.objects.select_related(
@@ -534,7 +589,11 @@ class LeaveListView(APIView):
                 employee=user
             ).select_related('approved_by')
 
-        serializer = LeaveListSerializer(leaves, many=True)
+        if status_filter:
+            status_list = [s.strip() for s in status_filter.split(',')]
+            leaves = leaves.filter(status__in=status_list)
+
+        serializer = LeaveListSerializer(leaves, many=True, context={'request': request})
         return Response(serializer.data)
 
 
@@ -553,7 +612,6 @@ class LeaveDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Permission check
         if (
             request.user != leave.employee and
             request.user.role not in ['manager', 'hr', 'admin', 'director']
@@ -563,20 +621,110 @@ class LeaveDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        serializer = LeaveDetailSerializer(leave)
+        serializer = LeaveDetailSerializer(leave, context={'request': request})
         return Response(serializer.data)
+        
+
+    def put(self, request, pk):
+        return self.update(request, pk, partial=False)
+
+    def patch(self, request, pk):
+        return self.update(request, pk, partial=True)
+
+    def update(self, request, pk, partial):
+        try:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        is_staff = request.user.role in ['manager', 'hr', 'admin', 'director']
+        is_owner = request.user == leave.employee
+
+        if not (is_staff or is_owner):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if is_owner and not is_staff:
+            if 'status' in request.data:
+                 return Response(
+                    {'error': 'You cannot change the status of your own leave application.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if leave.status != 'pending':
+                return Response(
+                    {'error': 'You can only update leave applications that are still pending.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        serializer = LeaveUpdateSerializer(leave, data=request.data, partial=partial)
+        if serializer.is_valid():
+            if is_staff and 'status' in request.data:
+                serializer.save(approved_by=request.user, approved_at=timezone.now())
+            else:
+                serializer.save()
+            
+            return Response(
+                {
+                    'message': 'Leave record updated successfully',
+                    'leave': LeaveDetailSerializer(leave, context={'request': request}).data
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        try:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave record not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if (
+            request.user != leave.employee and
+            request.user.role not in ['manager', 'hr', 'admin', 'director']
+        ):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        leave.delete()
+        return Response(
+            {'message': 'Leave record deleted successfully'},
+            status=status.HTTP_200_OK
+        )
 
 
-class SalaryHistoryView(APIView):
+#salary payment list view
+class SalaryPaymentListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        salary_history = SalaryHistory.objects.filter(employee=user)
-        serializer = SalaryHistorySerializer(salary_history, many=True)
+        employee_id = request.query_params.get('employee_id')
+        
+        if employee_id:
+            # Check permissions
+            if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+                return Response(
+                    {'error': 'You do not have permission to view other employees salary history'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            salary_payments = SalaryPayment.objects.filter(employee_id=employee_id)
+        else:
+            salary_payments = SalaryPayment.objects.filter(employee=request.user)
+            
+        serializer = SalaryPaymentSerializer(salary_payments, many=True)
         return Response(serializer.data)
-    
 
+       
+#process salary payment view
 class ProcessSalaryPaymentView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -585,22 +733,243 @@ class ProcessSalaryPaymentView(APIView):
             employee = CustomUser.objects.get(pk=pk)
         except CustomUser.DoesNotExist:
             return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+            
+        today = timezone.now().date()
+        target_month = request.data.get('month')
+        target_year = request.data.get('year')
         
-        # Check if salary already paid for this month
-        now = timezone.now()
-        if SalaryHistory.objects.filter(
-            user=employee, 
-            created_at__year=now.year, 
-            created_at__month=now.month
-        ).exists():
-             return Response({'message': 'Salary already paid for this month'}, status=status.HTTP_400_BAD_REQUEST)
+        if not target_month or not target_year:
+            import calendar
+            current_date_iter = date(employee.joining_date.year, employee.joining_date.month, 1)
+            end_date_iter = date(today.year, today.month, 1)
+            
+            while current_date_iter <= end_date_iter:
+                m = current_date_iter.month
+                y = current_date_iter.year
+                
+                is_paid = SalaryPayment.objects.filter(
+                    employee=employee,
+                    month=m,
+                    year=y,
+                    status__in=['paid', 'early_paid']
+                ).exists()
+                
+                if not is_paid:
+                    target_month = m
+                    target_year = y
+                    break
+                    
+                if current_date_iter.month == 12:
+                    current_date_iter = date(current_date_iter.year + 1, 1, 1)
+                else:
+                    current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
+        
+        if not target_month:
+            return Response({'error': 'Salary already paid for all months up to today'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        target_month = int(target_month)
+        target_year = int(target_year)
+        existing_salary_payment = SalaryPayment.objects.filter(
+            employee=employee,
+            month=target_month,
+            year=target_year,
+            status__in=['paid', 'early_paid']
+        ).exists()
+        
+        if existing_salary_payment:
+            return Response({'error': f'Salary already paid for {target_month}/{target_year}'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        base_salary = request.data.get('base_salary', employee.salary)
+        incentives = request.data.get('incentives', 0)
+        deductions = request.data.get('deductions', 0)
+        remarks = request.data.get('remarks', '')
+        payment_method = request.data.get('payment_method', 'bank_transfer')
+        
+        try:
+            base_salary = float(base_salary) if base_salary else 0
+            incentives = float(incentives)
+            deductions = float(deductions)
+            net_amount = base_salary + incentives - deductions
+        except (ValueError, TypeError):
+             return Response({'error': 'Invalid salary amounts'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        import calendar
+        try:
+            last_day_of_month = calendar.monthrange(target_year, target_month)[1]
+            scheduled_date = date(target_year, target_month, last_day_of_month)
+        except (AttributeError, ValueError):
+             last_day = calendar.monthrange(target_year, target_month)[1]
+             scheduled_date = date(target_year, target_month, last_day)
 
-        # Create salary history record
-        SalaryHistory.objects.create(
-            user=employee,
-            salary=employee.salary if employee.salary else 0,
-            incentive=request.data.get('incentive', 0),
-            reason="Monthly Salary Payment",
+        if today < scheduled_date:
+            payment_status_val = 'early_paid'
+        else:
+            payment_status_val = 'paid'
+            
+        salary_payment, created = SalaryPayment.objects.update_or_create(
+            employee=employee,
+            month=target_month,
+            year=target_year,
+            defaults={
+                'base_salary': base_salary,
+                'incentives': incentives,
+                'deductions': deductions,
+                'net_amount': net_amount,
+                'scheduled_date': scheduled_date,
+                'payment_date': timezone.now(),
+                'status': payment_status_val,
+                'payment_method': payment_method,
+                'processed_by': request.user,
+                'remarks': remarks
+            }
         )
         
-        return Response({'message': 'Salary processed successfully'})
+        return Response({
+            'message': f'Salary payment for {target_month}/{target_year} processed successfully',
+            'payroll_id': salary_payment.id,
+            'status': salary_payment.get_status_display()
+        }, status=status.HTTP_200_OK)
+
+
+# Admin Note List and Create View
+class AdminNoteListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, employee_id):
+        try:
+            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to view admin notes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        notes = AdminNote.objects.filter(employee=employee).order_by('-created_at')
+        serializer = AdminNoteSerializer(notes, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request, employee_id):
+        try:
+            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to create admin notes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        data = request.data.copy()
+        data['employee'] = employee.id
+        
+        serializer = AdminNoteCreateSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    'message': 'Admin note created successfully',
+                    
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+#salary payment detail view
+class PaymentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        try:
+            payment = SalaryPayment.objects.get(id=id)
+            serializer = PaymentDetailSerializer(payment)
+            return Response(serializer.data)
+        except SalaryPayment.DoesNotExist:
+            return Response(
+                {"error": "Payment not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class LeaveApprovalRejectView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        try:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
+            return Response(
+                {'error': 'Leave application not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permissions: only manager, hr, admin, or director can approve/reject
+        if request.user.role not in ['manager', 'hr', 'admin', 'director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'You do not have permission to approve/reject leave applications'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if leave.status != 'pending':
+            return Response(
+                {'error': 'This leave application has already been processed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = LeaveApprovalRejectSerializer(leave, data=request.data)
+        if serializer.is_valid():
+            status_val = serializer.validated_data.get('status')
+            
+            if status_val not in ['approved', 'rejected']:
+                return Response(
+                    {'error': 'Invalid status. Must be approved or rejected.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if status_val == 'approved':
+                leave.approved_by = request.user
+                leave.approved_at = timezone.now()
+            
+            serializer.save()
+            
+            return Response(
+                {
+                    'message': f'Leave application {status_val} successfully',
+                    'data': serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LeaveBalanceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import LeaveBalance
+        from .serializers import LeaveBalanceSerializer
+        from django.utils import timezone
+        
+        balance, created = LeaveBalance.objects.get_or_create(
+            employee=request.user,
+            year=timezone.now().year
+        )
+        
+        serializer = LeaveBalanceSerializer(balance)
+        return Response(serializer.data)
+
