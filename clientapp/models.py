@@ -325,6 +325,46 @@ class Client(models.Model):
             return f"Due in {self.days_until_next_payment} days"
         else:
             return "Pending"
+    # In clientapp/models.py, add these methods to Client class:
+
+    @property
+    def current_month_verification(self):
+        """Get current month's verification"""
+        from verification.models import ContentVerification
+        today = timezone.now()
+        
+        verification = ContentVerification.objects.filter(
+            client=self,
+            month=today.month,
+            year=today.year
+        ).first()
+        
+        return verification
+
+    @property
+    def verification_status(self):
+        """Get current verification status"""
+        verification = self.current_month_verification
+        if verification:
+            return verification.verification_status
+        return 'pending'
+
+    @property
+    def verification_progress(self):
+        """Get verification progress percentage"""
+        verification = self.current_month_verification
+        if verification:
+            return verification.progress_percentage
+        return 0
+
+    def get_monthly_verification(self, month, year):
+        """Get verification for specific month/year"""
+        from verification.models import ContentVerification
+        return ContentVerification.objects.filter(
+            client=self,
+            month=month,
+            year=year
+        ).first()
 
 
 class ClientDocument(models.Model):
