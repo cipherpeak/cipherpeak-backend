@@ -321,90 +321,131 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
+    payment_history_summary = serializers.SerializerMethodField()
     salary = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     class Meta:
         model = CustomUser
         fields = [
             'id','email','username','first_name', 'last_name', 'full_name',
-            'phone_number', 'role', 'salary', 'payment_status', 'current_status', 'joining_date',
+            'phone_number', 'role', 'salary', 'payment_status', 'payment_history_summary', 'current_status', 'joining_date',
             'employee_id', 'department', 'designation', 'profile_image', 
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
             'documents', 'media_files', 'leave_records', 'salary_payment_history',
         ]
-    def get_payment_status(self, obj):
-        from django.utils import timezone
+    def _calculate_month_status(self, obj, m, y):
+        from .models import SalaryPayment
         import calendar
         from datetime import date
+        from django.utils import timezone
+        
+        payment = SalaryPayment.objects.filter(
+            employee=obj,
+            month=m,
+            year=y
+        ).first()
+        
+        if payment:
+            return payment.status
+            
+        today = timezone.now().date()
+        joining_month_start = date(obj.joining_date.year, obj.joining_date.month, 1)
+        target_month_start = date(y, m, 1)
+        
+        if target_month_start < joining_month_start:
+            return "not_joined"
+            
+        if (y > today.year) or (y == today.year and m > today.month):
+            return "pending" # Future month
 
+        _, last_day = calendar.monthrange(y, m)
+        scheduled_date = date(y, m, last_day)
+        
+        if today > scheduled_date:
+            return "overdue"
+        elif today == scheduled_date:
+            return "pay_now"
+        elif (scheduled_date - today).days <= 7:
+            return "coming_soon"
+        else:
+            return "pending"
+
+    def get_payment_status(self, obj):
+        from django.utils import timezone
+        from datetime import date
+        
         if not obj.joining_date:
             return "Unknown"
 
         today = timezone.now().date()
-        
-        current_date_iter = date(obj.joining_date.year, obj.joining_date.month, 1)
-        
+        curr_iter = date(obj.joining_date.year, obj.joining_date.month, 1)
         end_date = date(today.year, today.month, 1)
         
-        target_month = None
-        target_year = None
-        
-        while current_date_iter <= end_date:
-            m = current_date_iter.month
-            y = current_date_iter.year
+        while curr_iter <= end_date:
+            m = curr_iter.month
+            y = curr_iter.year
             
-            is_paid = SalaryPayment.objects.filter(
-                employee=obj,
-                month=m,
-                year=y,
-                status__in=['paid', 'early_paid']
-            ).exists()
+            status = self._calculate_month_status(obj, m, y)
+            if status not in ['paid', 'early_paid']:
+                if status == 'overdue':
+                    return "Overdue"
+                elif status == 'pay_now':
+                    return "Pay Salary"
+                elif status == 'coming_soon':
+                    return "Payment date coming soon"
+                else:
+                    return "Pending"
             
-            if not is_paid:
-                target_month = m
-                target_year = y
-                break
-            
-            if current_date_iter.month == 12:
-                current_date_iter = date(current_date_iter.year + 1, 1, 1)
+            if curr_iter.month == 12:
+                curr_iter = date(curr_iter.year + 1, 1, 1)
             else:
-                current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
+                curr_iter = date(curr_iter.year, curr_iter.month + 1, 1)
 
-        if not target_month:
-            current_payroll = SalaryPayment.objects.filter(
-                employee=obj,
-                month=today.month,
-                year=today.year,
-                status='early_paid'
-            ).exists()
+        # Check for early paid in future
+        next_month = (today.month % 12) + 1
+        next_year = today.year + (1 if today.month == 12 else 0)
+        if self._calculate_month_status(obj, next_month, next_year) == 'early_paid':
+            return "Early Salary Paid"
             
-            next_month = (today.month % 12) + 1
-            next_year = today.year + (1 if today.month == 12 else 0)
-            next_payroll_is_early = SalaryPayment.objects.filter(
-                employee=obj,
-                month=next_month,
-                year=next_year,
-                status='early_paid'
-            ).exists()
+        return "Salary Paid"
 
-            if current_payroll or next_payroll_is_early:
-                return "Early Salary Paid"
-            return "Salary Paid"
+    def get_payment_history_summary(self, obj):
+        if not obj.joining_date:
+            return []
 
-        _, last_day_target_month = calendar.monthrange(target_year, target_month)
-        payment_due_date = date(target_year, target_month, last_day_target_month)
+        from django.utils import timezone
+        from datetime import date
         
-        days_diff = (payment_due_date - today).days
-
-        if days_diff < 0:
-            return "Overdue"
-        elif days_diff == 0:
-            return "Pay Salary"
-        elif 0 < days_diff <= 7:
-            return "Payment date coming soon"
+        today = timezone.now().date()
+        current_year = today.year
+        current_month = today.month
         
-        return None
+        next_month = (current_month % 12) + 1
+        next_year = current_year + (1 if current_month == 12 else 0)
+        
+        summary = []
+        curr_iter = date(obj.joining_date.year, obj.joining_date.month, 1)
+        end_iter = date(next_year, next_month, 1)
+        
+        while curr_iter <= end_iter:
+            m = curr_iter.month
+            y = curr_iter.year
+            
+            status = self._calculate_month_status(obj, m, y)
+            summary.append({
+                'month': m,
+                'year': y,
+                'status': status,
+                'status_display': status.replace('_', ' ').title()
+            })
+            
+            if curr_iter.month == 12:
+                curr_iter = date(curr_iter.year + 1, 1, 1)
+            else:
+                curr_iter = date(curr_iter.year, curr_iter.month + 1, 1)
+                
+        return summary
 
        
 
