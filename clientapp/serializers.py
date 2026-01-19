@@ -1,15 +1,16 @@
 from rest_framework import serializers
-from .models import Client, ClientDocument, ClientAdminNote, ClientPayment
+from .models import Client, ClientDocument, ClientPayment
 from django.utils import timezone
 from datetime import date
 import calendar
+from . import utils
 
 
 #client serializer
 class ClientSerializer(serializers.ModelSerializer):
-    is_active_client = serializers.ReadOnlyField()
-    contract_duration = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
+    is_active_client = serializers.SerializerMethodField()
+    contract_duration = serializers.SerializerMethodField()
+    payment_status_display = serializers.SerializerMethodField()
     email = serializers.ReadOnlyField(source='contact_email')
     phone = serializers.ReadOnlyField(source='contact_phone')
     company = serializers.ReadOnlyField(source='client_name')
@@ -81,6 +82,40 @@ class ClientSerializer(serializers.ModelSerializer):
         if queryset.exists():
             raise serializers.ValidationError("A client with this name already exists.")
         return value
+
+    def get_is_active_client(self, obj):
+        return obj.status == 'active'
+
+    def get_contract_duration(self, obj):
+        if obj.contract_start_date and obj.contract_end_date:
+            delta = obj.contract_end_date - obj.contract_start_date
+            return delta.days // 30
+        return None
+
+    def get_payment_status_display(self, obj):
+        if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
+             days_until = (obj.next_payment_date - timezone.now().date()).days
+        else:
+             days_until = None
+
+        if obj.current_month_payment_status == 'paid':
+            return "Paid"
+        elif obj.current_month_payment_status == 'overdue':
+            return "Overdue"
+        elif days_until == 0:
+            return "Due Today"
+        elif days_until and days_until <= 7:
+            return f"Due in {days_until} days"
+        else:
+            return "Pending"
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        if instance.payment_date:
+             utils.calculate_next_payment_date(instance)
+        utils.update_payment_status(instance)
+        instance.save()
+        return instance
     
 
 #client document serializer
@@ -114,40 +149,19 @@ class ClientPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'net_amount']
 
 
-#client admin note serializer
-class ClientAdminNoteSerializer(serializers.ModelSerializer):
-    
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    created_by_role = serializers.CharField(source='created_by.role', read_only=True)
-    
-    class Meta:
-        model = ClientAdminNote
-        fields = [
-            'id',
-            'client',
-            'note',
-            'created_by',
-            'created_by_name',
-            'created_by_role',
-            'created_at',
-            'updated_at'
-        ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
-
 
 #client detail serializer
 class ClientDetailSerializer(serializers.ModelSerializer):
      
-    is_active_client = serializers.ReadOnlyField()
-    contract_duration = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
+    is_active_client = serializers.SerializerMethodField()
+    contract_duration = serializers.SerializerMethodField()
+    payment_status_display = serializers.SerializerMethodField()
     email = serializers.ReadOnlyField(source='contact_email')
     phone = serializers.ReadOnlyField(source='contact_phone')
     company = serializers.ReadOnlyField(source='client_name')
     client_type_display = serializers.CharField(source='get_client_type_display', read_only=True)
     documents = ClientDocumentSerializer(many=True, read_only=True)
     client_payments = ClientPaymentSerializer(many=True, read_only=True)
-    admin_notes = ClientAdminNoteSerializer(many=True, read_only=True)
     payment_status = serializers.SerializerMethodField()
     
     class Meta:
@@ -167,7 +181,7 @@ class ClientDetailSerializer(serializers.ModelSerializer):
             'country', 'postal_code', 'website',
             'business_registration_number', 'tax_id', 'description',
             'is_active_client', 'contract_duration', 'documents', 
-            'client_payments', 'admin_notes', 'payment_status',
+            'client_payments', 'payment_status',
             'contract_start_date', 'contract_end_date',
         ]
     
@@ -248,7 +262,33 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         elif 0 < days_diff <= 7:
             return "Payment date coming soon"
         else:
-            return None
+            return "Pending"
+
+    def get_is_active_client(self, obj):
+        return obj.status == 'active'
+
+    def get_contract_duration(self, obj):
+        if obj.contract_start_date and obj.contract_end_date:
+            delta = obj.contract_end_date - obj.contract_start_date
+            return delta.days // 30
+        return None
+
+    def get_payment_status_display(self, obj):
+        if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
+             days_until = (obj.next_payment_date - timezone.now().date()).days
+        else:
+             days_until = None
+
+        if obj.current_month_payment_status == 'paid':
+            return "Paid"
+        elif obj.current_month_payment_status == 'overdue':
+            return "Overdue"
+        elif days_until == 0:
+            return "Due Today"
+        elif days_until and days_until <= 7:
+            return f"Due in {days_until} days"
+        else:
+            return "Pending"
 
 
 #client update serializer
@@ -298,12 +338,20 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A client with this name already exists.")
         return value
 
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        if instance.payment_date:
+             utils.calculate_next_payment_date(instance)
+        utils.update_payment_status(instance)
+        instance.save()
+        return instance
+
    
 #client list serializer
 class ClientListSerializer(serializers.ModelSerializer):
   
-    is_active_client = serializers.ReadOnlyField()
-    payment_status_display = serializers.ReadOnlyField()
+    is_active_client = serializers.SerializerMethodField()
+    payment_status_display = serializers.SerializerMethodField()
     email = serializers.ReadOnlyField(source='contact_email')
     phone = serializers.ReadOnlyField(source='contact_phone')
     company = serializers.ReadOnlyField(source='client_name')
@@ -338,6 +386,26 @@ class ClientListSerializer(serializers.ModelSerializer):
             'country', 'postal_code',
 
         ]
+
+    def get_is_active_client(self, obj):
+        return obj.status == 'active'
+
+    def get_payment_status_display(self, obj):
+        if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
+             days_until = (obj.next_payment_date - timezone.now().date()).days
+        else:
+             days_until = None
+
+        if obj.current_month_payment_status == 'paid':
+            return "Paid"
+        elif obj.current_month_payment_status == 'overdue':
+            return "Overdue"
+        elif days_until == 0:
+            return "Due Today"
+        elif days_until and days_until <= 7:
+            return f"Due in {days_until} days"
+        else:
+            return "Pending"
 
 
 #client payment detail serializer

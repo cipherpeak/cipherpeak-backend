@@ -56,9 +56,6 @@ urlpatterns = [
     path('process-salary-payment/<int:pk>/', views.ProcessSalaryPaymentView.as_view(), name='process-salary-payment'),
     path('payments/<int:id>/', views.PaymentDetailView.as_view(), name='payment-detail'),
     
-
-    #Admin Notes
-    path('admin-notes/<int:employee_id>/', views.AdminNoteListCreateView.as_view(), name='admin-note-list-create'),
    
 ]
 

@@ -23,11 +23,6 @@ urlpatterns = [
     #client delete url
     path('clients/delete/<int:id>/', views.ClientDeleteView.as_view(), name='delete_client'),
 
-
-    #client admin note url
-    path('clients/<int:id>/admin-note/', views.ClientAdminNoteView.as_view(), name='client-admin-note'),
-    path('clients/<int:id>/admin-note/create/', views.ClientAdminNoteCreateView.as_view(), name='client-admin-note-create'),
-
     # New client payment endpoints
     path('clients/<int:pk>/process-payment/', views.ProcessClientPaymentView.as_view(), name='process-client-payment'),
     path('clients/<int:client_id>/payment-history/', views.ClientPaymentHistoryListView.as_view(), name='client-payment-history'),

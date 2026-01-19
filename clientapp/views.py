@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django.db import models
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import Client, ClientDocument, ClientAdminNote, ClientPayment
+from .models import Client, ClientDocument, ClientPayment
 import calendar
 from datetime import date
 from .serializers import (
@@ -15,7 +15,6 @@ from .serializers import (
     ClientListSerializer,
     ClientDetailSerializer,
     ClientUpdateSerializer,
-    ClientAdminNoteSerializer,
     ClientPaymentSerializer,
     ClientPaymentDetailSerializer,
 )
@@ -55,10 +54,7 @@ class ClientDetailView(APIView):
                 'client_payments', 
                 queryset=ClientPayment.objects.all().order_by('-created_at')
             ),
-            Prefetch(
-                'admin_notes', 
-                queryset=ClientAdminNote.objects.all().order_by('-created_at')
-            ),
+
         ).first()
 
         if not client:
@@ -181,7 +177,6 @@ class ClientDocumentDeleteView(APIView):
         )
 
 
-
 #client delete view
 class ClientDeleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -204,31 +199,6 @@ class ClientDeleteView(APIView):
                 {'error': 'Client not found or already deleted.'},
                 status=status.HTTP_404_NOT_FOUND
             )
-
-
-
-#client admin note view
-class ClientAdminNoteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, id):
-        client = generics.get_object_or_404(Client, id=id, is_deleted=False)
-        admin_notes = ClientAdminNote.objects.filter(client=client)
-        serializer = ClientAdminNoteSerializer(admin_notes, many=True)
-        return Response(serializer.data)
-
-
-#client admin note create view
-class ClientAdminNoteCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, id):
-        client = generics.get_object_or_404(Client, id=id, is_deleted=False)
-        serializer = ClientAdminNoteSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(client=client, created_by=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 #process client payment view
@@ -336,7 +306,8 @@ class ProcessClientPaymentView(APIView):
         client.current_month_payment_status = payment_status_val
         client.last_payment_date = today
         
-        client.calculate_next_payment_date_after_payment()
+        from . import utils
+        utils.calculate_next_payment_date_after_payment(client)
         
         client.save(update_fields=['current_month_payment_status', 'last_payment_date', 'next_payment_date'])
 

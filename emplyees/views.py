@@ -26,8 +26,6 @@ from .serializers import (
     LeaveCreateSerializer,
     LeaveListSerializer,
     LeaveDetailSerializer,
-    AdminNoteCreateSerializer,
-    AdminNoteSerializer,
     LeaveUpdateSerializer,
     LeaveUpdateSerializer,
     SalaryPaymentSerializer,
@@ -468,7 +466,160 @@ class EmployeeMediaDeleteView(APIView):
             {'message': 'Media file deleted successfully'},
             status=status.HTTP_200_OK
         )
+
+
+
+#salary payment list view
+class SalaryPaymentListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        employee_id = request.query_params.get('employee_id')
+        
+        if employee_id:
+            # Check permissions
+            if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+                return Response(
+                    {'error': 'You do not have permission to view other employees salary history'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            salary_payments = SalaryPayment.objects.filter(employee_id=employee_id)
+        else:
+            salary_payments = SalaryPayment.objects.filter(employee=request.user)
+            
+        serializer = SalaryPaymentSerializer(salary_payments, many=True)
+        return Response(serializer.data)        
     
+
+
+
+#process salary payment view
+class ProcessSalaryPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            employee = CustomUser.objects.get(pk=pk)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+            
+        today = timezone.now().date()
+        target_month = request.data.get('month')
+        target_year = request.data.get('year')
+        
+        if not target_month or not target_year:
+            import calendar
+            current_date_iter = date(employee.joining_date.year, employee.joining_date.month, 1)
+            end_date_iter = date(today.year, today.month, 1)
+            
+            while current_date_iter <= end_date_iter:
+                m = current_date_iter.month
+                y = current_date_iter.year
+                
+                is_paid = SalaryPayment.objects.filter(
+                    employee=employee,
+                    month=m,
+                    year=y,
+                    status__in=['paid', 'early_paid']
+                ).exists()
+                
+                if not is_paid:
+                    target_month = m
+                    target_year = y
+                    break
+                    
+                if current_date_iter.month == 12:
+                    current_date_iter = date(current_date_iter.year + 1, 1, 1)
+                else:
+                    current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
+        
+        if not target_month:
+            return Response({'error': 'Salary already paid for all months up to today'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        target_month = int(target_month)
+        target_year = int(target_year)
+        existing_salary_payment = SalaryPayment.objects.filter(
+            employee=employee,
+            month=target_month,
+            year=target_year,
+            status__in=['paid', 'early_paid']
+        ).exists()
+        
+        if existing_salary_payment:
+            return Response({'error': f'Salary already paid for {target_month}/{target_year}'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        base_salary = request.data.get('base_salary', employee.salary)
+        incentives = request.data.get('incentives', 0)
+        deductions = request.data.get('deductions', 0)
+        remarks = request.data.get('remarks', '')
+        payment_method = request.data.get('payment_method', 'bank_transfer')
+        
+        try:
+            base_salary = float(base_salary) if base_salary else 0
+            incentives = float(incentives)
+            deductions = float(deductions)
+            net_amount = base_salary + incentives - deductions
+        except (ValueError, TypeError):
+             return Response({'error': 'Invalid salary amounts'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        import calendar
+        try:
+            last_day_of_month = calendar.monthrange(target_year, target_month)[1]
+            scheduled_date = date(target_year, target_month, last_day_of_month)
+        except (AttributeError, ValueError):
+             last_day = calendar.monthrange(target_year, target_month)[1]
+             scheduled_date = date(target_year, target_month, last_day)
+
+        if today < scheduled_date:
+            payment_status_val = 'early_paid'
+        else:
+            payment_status_val = 'paid'
+            
+        salary_payment, created = SalaryPayment.objects.update_or_create(
+            employee=employee,
+            month=target_month,
+            year=target_year,
+            defaults={
+                'base_salary': base_salary,
+                'incentives': incentives,
+                'deductions': deductions,
+                'net_amount': net_amount,
+                'scheduled_date': scheduled_date,
+                'payment_date': timezone.now(),
+                'status': payment_status_val,
+                'payment_method': payment_method,
+                'processed_by': request.user,
+                'remarks': remarks
+            }
+        )
+        
+        return Response({
+            'message': f'Salary payment for {target_month}/{target_year} processed successfully',
+            'payroll_id': salary_payment.id,
+            'status': salary_payment.get_status_display()
+        }, status=status.HTTP_200_OK)
+
+
+
+#salary payment detail view
+class PaymentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        try:
+            payment = SalaryPayment.objects.get(id=id)
+            serializer = PaymentDetailSerializer(payment)
+            return Response(serializer.data)
+        except SalaryPayment.DoesNotExist:
+            return Response(
+                {"error": "Payment not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
 
 #camera department list view
 class CameraDepartmentListView(APIView):
@@ -701,207 +852,6 @@ class LeaveDetailView(APIView):
             status=status.HTTP_200_OK
         )
 
-
-#salary payment list view
-class SalaryPaymentListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        employee_id = request.query_params.get('employee_id')
-        
-        if employee_id:
-            # Check permissions
-            if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
-                return Response(
-                    {'error': 'You do not have permission to view other employees salary history'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            salary_payments = SalaryPayment.objects.filter(employee_id=employee_id)
-        else:
-            salary_payments = SalaryPayment.objects.filter(employee=request.user)
-            
-        serializer = SalaryPaymentSerializer(salary_payments, many=True)
-        return Response(serializer.data)
-
-       
-#process salary payment view
-class ProcessSalaryPaymentView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, pk):
-        try:
-            employee = CustomUser.objects.get(pk=pk)
-        except CustomUser.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
-            
-        today = timezone.now().date()
-        target_month = request.data.get('month')
-        target_year = request.data.get('year')
-        
-        if not target_month or not target_year:
-            import calendar
-            current_date_iter = date(employee.joining_date.year, employee.joining_date.month, 1)
-            end_date_iter = date(today.year, today.month, 1)
-            
-            while current_date_iter <= end_date_iter:
-                m = current_date_iter.month
-                y = current_date_iter.year
-                
-                is_paid = SalaryPayment.objects.filter(
-                    employee=employee,
-                    month=m,
-                    year=y,
-                    status__in=['paid', 'early_paid']
-                ).exists()
-                
-                if not is_paid:
-                    target_month = m
-                    target_year = y
-                    break
-                    
-                if current_date_iter.month == 12:
-                    current_date_iter = date(current_date_iter.year + 1, 1, 1)
-                else:
-                    current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
-        
-        if not target_month:
-            return Response({'error': 'Salary already paid for all months up to today'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        target_month = int(target_month)
-        target_year = int(target_year)
-        existing_salary_payment = SalaryPayment.objects.filter(
-            employee=employee,
-            month=target_month,
-            year=target_year,
-            status__in=['paid', 'early_paid']
-        ).exists()
-        
-        if existing_salary_payment:
-            return Response({'error': f'Salary already paid for {target_month}/{target_year}'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        base_salary = request.data.get('base_salary', employee.salary)
-        incentives = request.data.get('incentives', 0)
-        deductions = request.data.get('deductions', 0)
-        remarks = request.data.get('remarks', '')
-        payment_method = request.data.get('payment_method', 'bank_transfer')
-        
-        try:
-            base_salary = float(base_salary) if base_salary else 0
-            incentives = float(incentives)
-            deductions = float(deductions)
-            net_amount = base_salary + incentives - deductions
-        except (ValueError, TypeError):
-             return Response({'error': 'Invalid salary amounts'}, status=status.HTTP_400_BAD_REQUEST)
-             
-        import calendar
-        try:
-            last_day_of_month = calendar.monthrange(target_year, target_month)[1]
-            scheduled_date = date(target_year, target_month, last_day_of_month)
-        except (AttributeError, ValueError):
-             last_day = calendar.monthrange(target_year, target_month)[1]
-             scheduled_date = date(target_year, target_month, last_day)
-
-        if today < scheduled_date:
-            payment_status_val = 'early_paid'
-        else:
-            payment_status_val = 'paid'
-            
-        salary_payment, created = SalaryPayment.objects.update_or_create(
-            employee=employee,
-            month=target_month,
-            year=target_year,
-            defaults={
-                'base_salary': base_salary,
-                'incentives': incentives,
-                'deductions': deductions,
-                'net_amount': net_amount,
-                'scheduled_date': scheduled_date,
-                'payment_date': timezone.now(),
-                'status': payment_status_val,
-                'payment_method': payment_method,
-                'processed_by': request.user,
-                'remarks': remarks
-            }
-        )
-        
-        return Response({
-            'message': f'Salary payment for {target_month}/{target_year} processed successfully',
-            'payroll_id': salary_payment.id,
-            'status': salary_payment.get_status_display()
-        }, status=status.HTTP_200_OK)
-
-
-# Admin Note List and Create View
-class AdminNoteListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request, employee_id):
-        try:
-            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
-        except CustomUser.DoesNotExist:
-            return Response(
-                {'error': 'Employee not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
-            return Response(
-                {'error': 'You do not have permission to view admin notes'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        notes = AdminNote.objects.filter(employee=employee).order_by('-created_at')
-        serializer = AdminNoteSerializer(notes, many=True)
-        return Response(serializer.data)
-    
-    def post(self, request, employee_id):
-        try:
-            employee = CustomUser.objects.get(id=employee_id, is_superuser=False)
-        except CustomUser.DoesNotExist:
-            return Response(
-                {'error': 'Employee not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager']:
-            return Response(
-                {'error': 'You do not have permission to create admin notes'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        data = request.data.copy()
-        data['employee'] = employee.id
-        
-        serializer = AdminNoteCreateSerializer(data=data, context={'request': request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response(
-                {
-                    'message': 'Admin note created successfully',
-                    
-                },
-                status=status.HTTP_201_CREATED
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-#salary payment detail view
-class PaymentDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, id):
-        try:
-            payment = SalaryPayment.objects.get(id=id)
-            serializer = PaymentDetailSerializer(payment)
-            return Response(serializer.data)
-        except SalaryPayment.DoesNotExist:
-            return Response(
-                {"error": "Payment not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
 
 
 class LeaveApprovalRejectView(APIView):

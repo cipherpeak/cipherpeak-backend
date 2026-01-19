@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, AdminNote,LeaveBalance
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment,LeaveBalance
 from django.contrib.auth import authenticate
 
 
@@ -309,31 +309,7 @@ class SalaryPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'net_amount']
 
 
-#admin note serializer
-class AdminNoteSerializer(serializers.ModelSerializer):
-    created_by = serializers.CharField(source='created_by.employee_id', read_only=True)
-    created_by_role = serializers.CharField(source='created_by.role', read_only=True)
-    
-    class Meta:
-        model = AdminNote
-        fields = [
-            'id',
-            'employee',
-            'note',
-            'created_by',
-            'created_by',
-            'created_by_role',
-            'created_at',
-            'updated_at'
-        ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
 
-
-#admin note 
-class AdminNoteCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AdminNote
-        fields = ['employee', 'note']
 
 
 #employee detail serializer
@@ -345,7 +321,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
-    admin_notes = AdminNoteSerializer(many=True, read_only=True)
     salary = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     class Meta:
         model = CustomUser
@@ -357,7 +332,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             'address', 'city', 'state', 'postal_code', 'country',
             'date_of_birth', 'gender', 'profile_image_url',  
             'documents', 'media_files', 'leave_records', 'salary_payment_history',
-            'admin_notes',    
         ]
     def get_payment_status(self, obj):
         from django.utils import timezone

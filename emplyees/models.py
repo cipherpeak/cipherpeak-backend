@@ -401,31 +401,6 @@ class LeaveManagement(models.Model):
         return f"{self.employee.employee_id} - {self.category} ({self.start_date} to {self.end_date})"
 
 
-class AdminNote(models.Model):
-    
-    employee = models.ForeignKey(
-        CustomUser,
-        on_delete=models.CASCADE,
-        related_name='admin_notes',
-        verbose_name="Employee"
-    )
-    
-    note = models.TextField(
-        verbose_name="Admin Remarks/Note",
-        help_text="Add remarks or notes about the employee"
-    )
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        ordering = ['-created_at']
-        verbose_name = "Admin Note"
-        verbose_name_plural = "Admin Notes"
-    
-    def __str__(self):
-        return f"Note for {self.employee.employee_id} - {self.created_at.strftime('%Y-%m-%d')}"
-
 
 class LeaveBalance(models.Model):
     employee = models.OneToOneField(
