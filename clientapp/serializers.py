@@ -9,6 +9,12 @@ import calendar
 class ClientSerializer(serializers.ModelSerializer):
     is_active_client = serializers.ReadOnlyField()
     contract_duration = serializers.ReadOnlyField()
+    payment_status_display = serializers.ReadOnlyField()
+    email = serializers.ReadOnlyField(source='contact_email')
+    phone = serializers.ReadOnlyField(source='contact_phone')
+    company = serializers.ReadOnlyField(source='client_name')
+    client_type_display = serializers.CharField(source='get_client_type_display', read_only=True)
+
     class Meta:
         model = Client
         fields = [
@@ -34,7 +40,6 @@ class ClientSerializer(serializers.ModelSerializer):
             'onboarding_date',
             'contract_start_date',
             'contract_end_date',
-            
             'address',
             'city',
             'state',
@@ -44,10 +49,18 @@ class ClientSerializer(serializers.ModelSerializer):
             'business_registration_number',
             'tax_id',
             'monthly_retainer',
+            'payment_date',
+            'next_payment_date',
+            'current_month_payment_status',
+            'last_payment_date',
+            'payment_status_display',
+            'email',
+            'phone',
+            'company',
+            'client_type_display',
             'description',
             'created_at',
             'updated_at',
-            
             'is_active_client',
             'contract_duration',
             
@@ -127,6 +140,11 @@ class ClientDetailSerializer(serializers.ModelSerializer):
      
     is_active_client = serializers.ReadOnlyField()
     contract_duration = serializers.ReadOnlyField()
+    payment_status_display = serializers.ReadOnlyField()
+    email = serializers.ReadOnlyField(source='contact_email')
+    phone = serializers.ReadOnlyField(source='contact_phone')
+    company = serializers.ReadOnlyField(source='client_name')
+    client_type_display = serializers.CharField(source='get_client_type_display', read_only=True)
     documents = ClientDocumentSerializer(many=True, read_only=True)
     client_payments = ClientPaymentSerializer(many=True, read_only=True)
     admin_notes = ClientAdminNoteSerializer(many=True, read_only=True)
@@ -141,7 +159,11 @@ class ClientDetailSerializer(serializers.ModelSerializer):
             'youtube_channel', 'google_my_business', 'linkedin_url',
             'twitter_handle', 'videos_per_month', 'posters_per_month',
             'reels_per_month', 'stories_per_month', 'status',
-            'onboarding_date', 'monthly_retainer', 'address', 'city', 'state',
+            'onboarding_date', 'monthly_retainer', 
+            'payment_date', 'next_payment_date', 'current_month_payment_status',
+            'last_payment_date', 'payment_status_display',
+            'email', 'phone', 'company', 'client_type_display',
+            'address', 'city', 'state',
             'country', 'postal_code', 'website',
             'business_registration_number', 'tax_id', 'description',
             'is_active_client', 'contract_duration', 'documents', 
@@ -281,6 +303,11 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
 class ClientListSerializer(serializers.ModelSerializer):
   
     is_active_client = serializers.ReadOnlyField()
+    payment_status_display = serializers.ReadOnlyField()
+    email = serializers.ReadOnlyField(source='contact_email')
+    phone = serializers.ReadOnlyField(source='contact_phone')
+    company = serializers.ReadOnlyField(source='client_name')
+    client_type_display = serializers.CharField(source='get_client_type_display', read_only=True)
    
     class Meta:
         model = Client
@@ -295,6 +322,21 @@ class ClientListSerializer(serializers.ModelSerializer):
             'status',
             'is_active_client',
             'created_at',
+            'next_payment_date',
+            'last_payment_date',
+            'current_month_payment_status',
+            'payment_status_display',
+            'email',
+            'phone',
+            'company',
+            'client_type_display',
+            "client_payments",
+            'monthly_retainer',
+            'videos_per_month', 'posters_per_month',
+            'reels_per_month', 'stories_per_month',
+            'address', 'city', 'state',
+            'country', 'postal_code',
+
         ]
 
 
