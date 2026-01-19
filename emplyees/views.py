@@ -146,7 +146,7 @@ class EmployeeCreateView(APIView):
                         'joining_date': serializer.validated_data.get('joining_date'),
                         'is_active': True,
                     }
-                    
+                    print("Employee data:", employee_data)
                     if 'profile_image' in request.FILES:
                         employee_data['profile_image'] = request.FILES['profile_image']
                         print("Profile image found and added to employee data")

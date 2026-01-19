@@ -28,5 +28,5 @@ urlpatterns = [
     path('tasks/', include('task.urls')), 
     path('event/', include('events.urls')), 
     path('api/finance/', include('finance.urls')), 
-    path('api/verification/', include('verification.urls')),
+    path('api/', include('verification.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

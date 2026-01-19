@@ -46,7 +46,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'phone_number', 'role', 'current_status', 'department',
-            'designation','profile_image_url',
+            'designation','profile_image_url', 'date_of_birth',
         ]
         read_only_fields = ['created_at', 'updated_at']
     

@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'verification',
     'corsheaders',
     'rest_framework',
-    'rest_framework_simplejwt.token_blacklist'
+    'rest_framework_simplejwt.token_blacklist',
+    'django_filters'
 ]
 
 MIDDLEWARE = [
@@ -76,7 +77,8 @@ AUTH_USER_MODEL = 'emplyees.CustomUser'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
-    "http://localhost:8081"
+    "http://localhost:8081",
+    "http://localhost:3000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True   
