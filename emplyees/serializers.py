@@ -350,7 +350,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'id','email', 'first_name', 'last_name', 'full_name',
+            'id','email','username','first_name', 'last_name', 'full_name',
             'phone_number', 'role', 'salary', 'payment_status', 'current_status', 'joining_date',
             'employee_id', 'department', 'designation', 'profile_image', 
             'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',

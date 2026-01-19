@@ -11,6 +11,9 @@ urlpatterns = [
     #employee listing
     path('employees/', views.EmployeeListView.as_view(), name='employee_list'),
        
+   #employee detail url
+    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+
     #Employee Creation
     path('employees/create/', views.EmployeeCreateView.as_view(), name='create_employee'),
     
@@ -30,8 +33,7 @@ urlpatterns = [
     #delete employee
     path('employees/<int:employee_id>/delete/', views.EmployeeDeleteView.as_view(), name='delete_employee'),
     
-    #employee detail url
-    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+ 
     
 
     # JWT Token Refresh
