@@ -219,8 +219,22 @@ class ProcessClientPaymentView(APIView):
         target_month = request.data.get('month')
         target_year = request.data.get('year')
         
+        # Try to extract from date fields if month/year are missing
         if not target_month or not target_year:
-            import calendar
+            date_field = request.data.get('selected_date') or request.data.get('payment_date') or request.data.get('date')
+            if date_field:
+                try:
+                    if isinstance(date_field, str):
+                        from django.utils.dateparse import parse_date
+                        parsed_d = parse_date(date_field.split('T')[0])
+                        if parsed_d:
+                            target_month = parsed_d.month
+                            target_year = parsed_d.year
+                except (ValueError, TypeError, IndexError):
+                    pass
+
+        # If still missing, find the first unpaid month since onboarding
+        if not target_month or not target_year:
             current_date_iter = date(client.onboarding_date.year, client.onboarding_date.month, 1)
             end_date_iter = date(today.year, today.month, 1)
             
@@ -251,6 +265,22 @@ class ProcessClientPaymentView(APIView):
         target_month = int(target_month)
         target_year = int(target_year)
 
+        # Validation: Block future months (allow current month and next month for early payment)
+        if (target_year > today.year) or (target_year == today.year and target_month > today.month + 1):
+             return Response({'error': f'Payment cannot be processed for {target_year}-{target_month:02}. Future month payments beyond next month are not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Special case for end of year
+        if today.month == 12 and target_year == today.year + 1 and target_month == 1:
+            pass # Allowed
+        elif (target_year > today.year) and not (today.month == 12 and target_year == today.year + 1 and target_month == 1):
+             return Response({'error': f'Payment cannot be processed for {target_year}-{target_month:02}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validation: Onboarding date
+        onboarding_date_start = date(client.onboarding_date.year, client.onboarding_date.month, 1)
+        target_date_start = date(target_year, target_month, 1)
+        if target_date_start < onboarding_date_start:
+             return Response({'error': f'Cannot process payment for {target_month}/{target_year}. Client onboarded on {client.onboarding_date}'}, status=status.HTTP_400_BAD_REQUEST)
+
         existing_payment = ClientPayment.objects.filter(
             client=client,
             month=target_month,
@@ -262,26 +292,27 @@ class ProcessClientPaymentView(APIView):
             return Response({'error': f'Payment already processed for {target_month}/{target_year}'}, status=status.HTTP_400_BAD_REQUEST)
         
         amount = request.data.get('amount', client.monthly_retainer)
+        tax_amount = request.data.get('tax_amount', 0)
+        discount = request.data.get('discount', 0)
         payment_method = request.data.get('payment_method', 'bank_transfer')
         transaction_id = request.data.get('transaction_id', '')
         remarks = request.data.get('remarks', '')
         
         try:
             amount = float(amount) if amount else 0
+            tax_amount = float(tax_amount) if tax_amount else 0
+            discount = float(discount) if discount else 0
+            net_amount = amount + tax_amount - discount
         except (ValueError, TypeError):
-            return Response({'error': 'Invalid payment amount'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid payment amounts'}, status=status.HTTP_400_BAD_REQUEST)
         
         import calendar
-        try:
-            
-            last_day_of_month = calendar.monthrange(target_year, target_month)[1]
-            scheduled_date = date(target_year, target_month, last_day_of_month)
-        except (AttributeError, ValueError):
-           
-            last_day = calendar.monthrange(target_year, target_month)[1]
-            scheduled_date = date(target_year, target_month, last_day)
+        _, last_day = calendar.monthrange(target_year, target_month)
+        # Use the last day of the month as the official scheduled_date
+        actual_scheduled_date = date(target_year, target_month, last_day)
+        scheduled_date_threshold = actual_scheduled_date
         
-        if today < scheduled_date:
+        if today < scheduled_date_threshold:
             payment_status_val = 'early_paid'
         else:
             payment_status_val = 'paid'
@@ -292,8 +323,10 @@ class ProcessClientPaymentView(APIView):
             year=target_year,
             defaults={
                 'amount': amount,
-                'net_amount': amount,
-                'scheduled_date': scheduled_date,
+                'tax_amount': tax_amount,
+                'discount': discount,
+                'net_amount': net_amount,
+                'scheduled_date': actual_scheduled_date,
                 'payment_date': timezone.now(),
                 'status': payment_status_val,
                 'payment_method': payment_method,

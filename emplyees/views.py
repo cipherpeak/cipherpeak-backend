@@ -510,37 +510,39 @@ class ProcessSalaryPaymentView(APIView):
         target_month = request.data.get('month')
         target_year = request.data.get('year')
         
+        # Try to extract from date fields if month/year are missing
         if not target_month or not target_year:
-            import calendar
-            current_date_iter = date(employee.joining_date.year, employee.joining_date.month, 1)
-            end_date_iter = date(today.year, today.month, 1)
-            
-            while current_date_iter <= end_date_iter:
-                m = current_date_iter.month
-                y = current_date_iter.year
-                
-                is_paid = SalaryPayment.objects.filter(
-                    employee=employee,
-                    month=m,
-                    year=y,
-                    status__in=['paid', 'early_paid']
-                ).exists()
-                
-                if not is_paid:
-                    target_month = m
-                    target_year = y
-                    break
-                    
-                if current_date_iter.month == 12:
-                    current_date_iter = date(current_date_iter.year + 1, 1, 1)
-                else:
-                    current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
-        
-        if not target_month:
-            return Response({'error': 'Salary already paid for all months up to today'}, status=status.HTTP_400_BAD_REQUEST)
+            date_field = request.data.get('selected_date') or request.data.get('payment_date') or request.data.get('date')
+            if date_field:
+                try:
+                    if isinstance(date_field, str):
+                        # Handle ISO format or direct YYYY-MM-DD
+                        from django.utils.dateparse import parse_date
+                        parsed_d = parse_date(date_field.split('T')[0])
+                        if parsed_d:
+                            target_month = parsed_d.month
+                            target_year = parsed_d.year
+                except (ValueError, TypeError, IndexError):
+                    pass
+
+        # If still missing, default to current month (allows skipping past months)
+        if not target_month or not target_year:
+            target_month = today.month
+            target_year = today.year
         
         target_month = int(target_month)
         target_year = int(target_year)
+
+        # Validation: Block future months
+        if (target_year > today.year) or (target_year == today.year and target_month > today.month):
+             return Response({'error': f'Salary cannot be processed for {target_year}-{target_month:02}. Future month payments are not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validation: Joining date
+        joining_date_start = date(employee.joining_date.year, employee.joining_date.month, 1)
+        target_date_start = date(target_year, target_month, 1)
+        if target_date_start < joining_date_start:
+             return Response({'error': f'Cannot process payment for {target_month}/{target_year}. Employee joined on {employee.joining_date}'}, status=status.HTTP_400_BAD_REQUEST)
+
         existing_salary_payment = SalaryPayment.objects.filter(
             employee=employee,
             month=target_month,
@@ -566,12 +568,8 @@ class ProcessSalaryPaymentView(APIView):
              return Response({'error': 'Invalid salary amounts'}, status=status.HTTP_400_BAD_REQUEST)
              
         import calendar
-        try:
-            last_day_of_month = calendar.monthrange(target_year, target_month)[1]
-            scheduled_date = date(target_year, target_month, last_day_of_month)
-        except (AttributeError, ValueError):
-             last_day = calendar.monthrange(target_year, target_month)[1]
-             scheduled_date = date(target_year, target_month, last_day)
+        _, last_day = calendar.monthrange(target_year, target_month)
+        scheduled_date = date(target_year, target_month, last_day)
 
         if today < scheduled_date:
             payment_status_val = 'early_paid'

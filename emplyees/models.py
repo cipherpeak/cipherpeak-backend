@@ -350,11 +350,7 @@ class LeaveManagement(models.Model):
         null=True
     )
     
-    address_during_leave = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Address During the Leave"
-    )
+    
     
     attachment = models.FileField(
         upload_to='leave_attachments/',
@@ -399,7 +395,6 @@ class LeaveManagement(models.Model):
     
     def __str__(self):
         return f"{self.employee.employee_id} - {self.category} ({self.start_date} to {self.end_date})"
-
 
 
 class LeaveBalance(models.Model):
