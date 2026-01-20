@@ -401,7 +401,6 @@ class LeaveManagement(models.Model):
         return f"{self.employee.employee_id} - {self.category} ({self.start_date} to {self.end_date})"
 
 
-
 class LeaveBalance(models.Model):
     employee = models.OneToOneField(
         CustomUser,

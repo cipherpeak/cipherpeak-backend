@@ -177,7 +177,6 @@ class Client(models.Model):
     def __str__(self):
         return f"{self.client_name} ({self.get_client_type_display()})"
 
-    
 
 
 class ClientDocument(models.Model):
