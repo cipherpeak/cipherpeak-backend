@@ -93,13 +93,21 @@ class ClientSerializer(serializers.ModelSerializer):
         return None
 
     def get_payment_status_display(self, obj):
+        # We try to use the more robust get_payment_status logic if available
+        # or at least avoid returning "Paid" if there's no record.
+        # For simplicity and performance in the list view, we still use obj.current_month_payment_status
+        # but the Detail view will be the most accurate.
+        
         if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
              days_until = (obj.next_payment_date - timezone.now().date()).days
         else:
              days_until = None
 
         if obj.current_month_payment_status == 'paid':
+            # Verify if this is actually true for the list view too
             return "Paid"
+        elif obj.current_month_payment_status == 'early_paid':
+            return "Early Paid"
         elif obj.current_month_payment_status == 'overdue':
             return "Overdue"
         elif days_until == 0:
@@ -186,7 +194,6 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         ]
     
     def get_payment_status(self, obj):
-      
         from django.utils import timezone
         import calendar
         from datetime import date
@@ -196,8 +203,8 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         
         today = timezone.now().date()
         
+        # Find the first unpaid month since onboarding
         current_date_iter = date(obj.onboarding_date.year, obj.onboarding_date.month, 1)
-        
         end_date = date(today.year, today.month, 1)
         
         target_month = None
@@ -225,35 +232,35 @@ class ClientDetailSerializer(serializers.ModelSerializer):
                 current_date_iter = date(current_date_iter.year, current_date_iter.month + 1, 1)
 
         if not target_month:
-           
+            # Check if any payments exist at all
+            has_payments = ClientPayment.objects.filter(client=obj).exists()
+            
+            # Check if current month is paid early or if future payments exist
             current_payment = ClientPayment.objects.filter(
                 client=obj,
                 month=today.month,
                 year=today.year,
-                status='early_paid'
-            ).exists()
+                status__in=['paid', 'early_paid']
+            ).first()
             
-            next_month = (today.month % 12) + 1
-            next_year = today.year + (1 if today.month == 12 else 0)
-            next_payment_is_early = ClientPayment.objects.filter(
-                client=obj,
-                month=next_month,
-                year=next_year,
-                status='early_paid'
-            ).exists()
+            if current_payment:
+                if current_payment.status == 'early_paid':
+                    return "Early Payment Received"
+                return "Payment Received"
+            
+            if not has_payments and obj.onboarding_date > today:
+                return "Upcoming"
+                
+            if not has_payments:
+                return "Pending"
 
-            if current_payment or next_payment_is_early:
-                return "Early Payment Received"
-            return "Payment Received"
+            return "Payment Received" # Default for "all caught up"
 
-        try:
-            _, last_day_target_month = calendar.monthrange(target_year, target_month)
-            scheduled_date = date(target_year, target_month, last_day_target_month)
-        except (AttributeError, ValueError):
-            _, last_day_target_month = calendar.monthrange(target_year, target_month)
-            scheduled_date = date(target_year, target_month, last_day_target_month)
+        # Calculate scheduled date threshold based on end of month (align with employee logic)
+        _, last_day_target_month = calendar.monthrange(target_year, target_month)
+        scheduled_date_threshold = date(target_year, target_month, last_day_target_month)
         
-        days_diff = (scheduled_date - today).days
+        days_diff = (scheduled_date_threshold - today).days
         
         if days_diff < 0:
             return "Overdue"
@@ -274,21 +281,11 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_payment_status_display(self, obj):
-        if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
-             days_until = (obj.next_payment_date - timezone.now().date()).days
-        else:
-             days_until = None
-
-        if obj.current_month_payment_status == 'paid':
-            return "Paid"
-        elif obj.current_month_payment_status == 'overdue':
-            return "Overdue"
-        elif days_until == 0:
-            return "Due Today"
-        elif days_until and days_until <= 7:
-            return f"Due in {days_until} days"
-        else:
-            return "Pending"
+        # In the detail view, we can afford to be more accurate
+        status = self.get_payment_status(obj)
+        if status == "Payment Received": return "Paid"
+        if status == "Early Payment Received": return "Early Paid"
+        return status
 
 
 #client update serializer
@@ -315,6 +312,7 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             'reels_per_month',
             'stories_per_month',
             'status',
+            'onboarding_date',
             'contract_start_date',
             'contract_end_date',
             'address',
@@ -326,6 +324,7 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             'business_registration_number',
             'tax_id',
             'monthly_retainer',
+            'payment_date',
             'description',
         ]
 
@@ -391,6 +390,28 @@ class ClientListSerializer(serializers.ModelSerializer):
         return obj.status == 'active'
 
     def get_payment_status_display(self, obj):
+        # For the list view, we avoid heavy calculations but verify the 'paid' status
+        from .models import ClientPayment
+        today = timezone.now().date()
+        
+        # Check if a payment actually exists for the current month if status is 'paid'
+        if obj.current_month_payment_status in ['paid', 'early_paid']:
+            exists = ClientPayment.objects.filter(
+                client=obj,
+                month=today.month,
+                year=today.year,
+                status__in=['paid', 'early_paid']
+            ).exists()
+            
+            if not exists:
+                # Use target month's end to decide 'Overdue' to align with detail view
+                import calendar
+                _, last_day = calendar.monthrange(today.year, today.month)
+                eom = date(today.year, today.month, last_day)
+                if today > eom:
+                    return "Overdue"
+                return "Pending"
+
         if hasattr(obj, 'next_payment_date') and obj.next_payment_date:
              days_until = (obj.next_payment_date - timezone.now().date()).days
         else:
@@ -398,6 +419,8 @@ class ClientListSerializer(serializers.ModelSerializer):
 
         if obj.current_month_payment_status == 'paid':
             return "Paid"
+        elif obj.current_month_payment_status == 'early_paid':
+            return "Early Paid"
         elif obj.current_month_payment_status == 'overdue':
             return "Overdue"
         elif days_until == 0:

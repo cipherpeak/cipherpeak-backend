@@ -115,10 +115,10 @@ class Client(models.Model):
         verbose_name="Payment Cycle"
     )
     payment_date = models.PositiveIntegerField(
-        default=1,
+        default=31,
         validators=[MinValueValidator(1), MaxValueValidator(31)],
-        verbose_name="Payment Date (Day of Month)",
-        help_text="Enter the day of month (1-31) when payment is due"
+        verbose_name="Default Payment Day",
+        help_text="The system now defaults to the last day of the month for all payments."
     )
     next_payment_date = models.DateField(
         blank=True, 
