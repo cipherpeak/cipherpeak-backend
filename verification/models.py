@@ -11,7 +11,7 @@ class ClientVerification(models.Model):
 
     client = models.ForeignKey('clientapp.Client', on_delete=models.CASCADE, related_name='verifications')
     content_type = models.CharField(max_length=10, choices=CONTENT_TYPE_CHOICES)
-    completion_date = models.DateField(default=timezone.now)
+    completion_date = models.DateField(null=True, blank=True)
     description = models.TextField(blank=True, null=True)
     
     verified_by = models.ForeignKey(
@@ -22,8 +22,8 @@ class ClientVerification(models.Model):
         related_name='verified_content'
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ['-completion_date']

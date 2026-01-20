@@ -57,3 +57,55 @@ class ClientVerificationSerializer(serializers.ModelSerializer):
         
         return data
 
+
+# API 1: Pending Clients List Serializer
+class PendingClientSerializer(serializers.Serializer):
+    client_id = serializers.IntegerField()
+    client_name = serializers.CharField()
+    completion_date = serializers.DateField()
+    status = serializers.CharField()
+    pending_count = serializers.IntegerField()
+
+
+# API 2: Client Content Detail Serializer
+class ContentItemSerializer(serializers.ModelSerializer):
+    content_type_display = serializers.CharField(source='get_content_type_display', read_only=True)
+    verified_by_name = serializers.CharField(source='verified_by.username', read_only=True, allow_null=True)
+    is_verified = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ClientVerification
+        fields = [
+            'id', 'content_type', 'content_type_display', 
+            'completion_date', 'description', 'verified_by', 
+            'verified_by_name', 'is_verified', 'created_at', 'updated_at'
+        ]
+    
+    def get_is_verified(self, obj):
+        return obj.verified_by is not None
+
+
+class ClientContentDetailSerializer(serializers.Serializer):
+    client_id = serializers.IntegerField()
+    client_name = serializers.CharField()
+    videos = ContentItemSerializer(many=True)
+    posters = ContentItemSerializer(many=True)
+    reels = ContentItemSerializer(many=True)
+    stories = ContentItemSerializer(many=True)
+    total_pending = serializers.IntegerField()
+    total_verified = serializers.IntegerField()
+
+
+# API 3: Mark Content as Verified Serializer
+class MarkContentVerifiedSerializer(serializers.Serializer):
+    verification_id = serializers.IntegerField()
+    
+    def validate_verification_id(self, value):
+        try:
+            verification = ClientVerification.objects.get(id=value)
+            if verification.verified_by is not None:
+                raise serializers.ValidationError("This content has already been verified.")
+        except ClientVerification.DoesNotExist:
+            raise serializers.ValidationError("Verification record not found.")
+        return value
+
