@@ -276,13 +276,9 @@ class EmployeeMediaCreateSerializer(serializers.ModelSerializer):
 
 #Leave list serializer
 class LeaveListSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(
-        source='employee.get_full_name', read_only=True
-    )
+    employee_name = serializers.SerializerMethodField()
     employee_id = serializers.IntegerField(source='employee.id', read_only=True)
-    approved_by_name = serializers.CharField(
-        source='approved_by.get_full_name', read_only=True
-    )
+    approved_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaveManagement
@@ -292,10 +288,20 @@ class LeaveListSerializer(serializers.ModelSerializer):
             'approved_by_name', 'approved_at', 'remarks', 'attachment'
         ]
 
+    def get_employee_name(self, obj):
+        name = obj.employee.get_full_name()
+        return name if name.strip() else obj.employee.username
+
+    def get_approved_by_name(self, obj):
+        if not obj.approved_by:
+            return None
+        name = obj.approved_by.get_full_name()
+        return name if name.strip() else obj.approved_by.username
+
 
 # SalaryPayment serializer
 class SalaryPaymentSerializer(serializers.ModelSerializer):
-    processed_by_name = serializers.CharField(source='processed_by.get_full_name', read_only=True)
+    processed_by_name = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
@@ -308,6 +314,12 @@ class SalaryPaymentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'net_amount']
 
+    def get_processed_by_name(self, obj):
+        if not obj.processed_by:
+            return None
+        name = obj.processed_by.get_full_name()
+        return name if name.strip() else obj.processed_by.username
+
 
 
 
@@ -318,7 +330,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     media_files = EmployeeMediaSerializer(many=True, read_only=True)
     leave_records = LeaveListSerializer(source='leaves', many=True, read_only=True)
     salary_payment_history = SalaryPaymentSerializer(source='salary_payments', many=True, read_only=True)
-    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    full_name = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()  
     payment_status = serializers.SerializerMethodField()
     payment_history_summary = serializers.SerializerMethodField()
@@ -334,6 +346,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             'date_of_birth', 'gender', 'profile_image_url',  
             'documents', 'media_files', 'leave_records', 'salary_payment_history',
         ]
+
+    def get_full_name(self, obj):
+        name = obj.get_full_name()
+        return name if name.strip() else obj.username
     def _calculate_month_status(self, obj, m, y):
         from .models import SalaryPayment
         import calendar
@@ -462,12 +478,18 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 # camera department list serializer
 class CameraDepartmentListSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
+    employee_name = serializers.SerializerMethodField()
     class Meta:
         model = CameraDepartment
         fields = [
             'id', 'client', 'client_name', 'uploaded_date', 'priority','link','employee_name'
         ]
+
+    def get_employee_name(self, obj):
+        if not obj.employee:
+            return None
+        name = obj.employee.get_full_name()
+        return name if name.strip() else obj.employee.username
 
 
 #camera department create serializer
@@ -484,13 +506,19 @@ class CameraDepartmentCreateSerializer(serializers.ModelSerializer):
 #camera department detail serializer
 class CameraDepartmentDetailSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
+    employee_name = serializers.SerializerMethodField()
     class Meta:
         model = CameraDepartment
         fields = [
             'id', 'client', 'client_name',  
             'uploaded_date', 'priority', 'link','employee_name'
         ]
+
+    def get_employee_name(self, obj):
+        if not obj.employee:
+            return None
+        name = obj.employee.get_full_name()
+        return name if name.strip() else obj.employee.username
 
 
 #Leave create serializer
@@ -504,7 +532,7 @@ class LeaveCreateSerializer(serializers.ModelSerializer):
             'end_date',
             'total_days',
             'reason',
-            'address_during_leave',
+           
             'attachment',
         ]
 
@@ -516,16 +544,22 @@ class LeaveCreateSerializer(serializers.ModelSerializer):
 
 #Leave detail serializer
 class LeaveDetailSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(
-        source='employee.get_full_name', read_only=True
-    )
-    approved_by_name = serializers.CharField(
-        source='approved_by.get_full_name', read_only=True
-    )
+    employee_name = serializers.SerializerMethodField()
+    approved_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaveManagement
         fields = '__all__'
+
+    def get_employee_name(self, obj):
+        name = obj.employee.get_full_name()
+        return name if name.strip() else obj.employee.username
+
+    def get_approved_by_name(self, obj):
+        if not obj.approved_by:
+            return None
+        name = obj.approved_by.get_full_name()
+        return name if name.strip() else obj.approved_by.username
 
 
 #leave update serializer
@@ -538,7 +572,7 @@ class LeaveUpdateSerializer(serializers.ModelSerializer):
             'end_date', 
             'total_days', 
             'reason', 
-            'address_during_leave', 
+            
             'attachment',
             'status', 
             'remarks',
