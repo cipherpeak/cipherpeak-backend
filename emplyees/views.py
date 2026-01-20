@@ -594,6 +594,23 @@ class ProcessSalaryPaymentView(APIView):
             }
         )
         
+        # Record in Finance
+        try:
+            from finance.utils import record_system_expense
+            record_system_expense(
+                expense_type='employee_salaries',
+                amount=net_amount,
+                date=today,
+                category_name='Salaries',
+                vendor_name=employee.get_full_name() or employee.username,
+                remarks=f"Salary for {target_month}/{target_year}. {remarks}",
+                reference_number=f"SAL-{salary_payment.id}",
+                payment_method=payment_method,
+                created_by=request.user
+            )
+        except Exception as e:
+            print(f"Error recording finance expense: {str(e)}")
+
         return Response({
             'message': f'Salary payment for {target_month}/{target_year} processed successfully',
             'payroll_id': salary_payment.id,
