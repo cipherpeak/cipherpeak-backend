@@ -601,9 +601,9 @@ class ProcessSalaryPaymentView(APIView):
                 expense_type='employee_salaries',
                 amount=net_amount,
                 date=today,
-                category_name='Salaries',
+                category_name='Employee Salaries',
                 vendor_name=employee.get_full_name() or employee.username,
-                remarks=f"Salary for {target_month}/{target_year}. {remarks}",
+                remarks=f"Salary Payment for {employee.get_full_name() or employee.username} - {calendar.month_name[target_month]} {target_year}. {remarks}",
                 reference_number=f"SAL-{salary_payment.id}",
                 payment_method=payment_method,
                 created_by=request.user

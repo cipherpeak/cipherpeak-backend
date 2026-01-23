@@ -86,6 +86,11 @@ class Income(TimeStampedModel):
         decimal_places=2,
         default=0
     )
+    total_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
     category = models.ForeignKey(
         IncomeCategory, 
         on_delete=models.PROTECT,
@@ -147,6 +152,11 @@ class Income(TimeStampedModel):
         related_name='modified_incomes'
     )
     
+    def save(self, *args, **kwargs):
+        if self.total_amount is None or self.total_amount == 0:
+            self.total_amount = self.amount + self.gst_amount
+        super().save(*args, **kwargs)
+
     class Meta:
         verbose_name = "Income"
         verbose_name_plural = "Incomes"

@@ -14,6 +14,7 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
 
 class IncomeListSerializer(serializers.ModelSerializer):
     """Serializer for listing incomes (read-only fields for display)"""
+    category = serializers.CharField(source='category.name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     type_display = serializers.CharField(source='get_type_display', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
@@ -24,7 +25,7 @@ class IncomeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Income
         fields = [
-            'id', 'type', 'type_display', 'amount', 'formatted_amount', 'gst_amount', 'gst_rate',
+            'id', 'type', 'type_display', 'amount', 'formatted_amount', 'gst_amount', 'gst_rate', 'total_amount',
             'category', 'category_name', 'date', 'client_name', 
             'remarks', 'reference_number', 'is_recurring', 'recurring_frequency',
             'payment_method', 'payment_method_display', 'payment_status', 
@@ -51,7 +52,7 @@ class IncomeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Income
         fields = [
-            'id', 'type', 'type_display', 'amount', 'formatted_amount', 'gst_amount', 'gst_rate',
+            'id', 'type', 'type_display', 'amount', 'formatted_amount', 'gst_amount', 'gst_rate', 'total_amount',
             'category', 'category_name', 'date', 'client_name', 'client_email',
             'client_phone', 'remarks', 'reference_number', 'is_recurring', 
             'recurring_frequency', 'payment_method', 'payment_method_display', 
@@ -60,6 +61,19 @@ class IncomeSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_by', 'last_modified_by', 'created_at', 'updated_at']
+    
+    def to_representation(self, instance):
+        """Convert category FK to category name for reading"""
+        ret = super().to_representation(instance)
+        # Convert category from FK to name
+        if hasattr(instance, 'category'):
+            if isinstance(instance.category, str):
+                # Already a string (e.g., from ClientPaymentWrapper)
+                ret['category'] = instance.category
+            elif instance.category:
+                # It's a ForeignKey object
+                ret['category'] = instance.category.name
+        return ret
 
     def create(self, validated_data):
         category_name = validated_data.pop('category', 'General')
@@ -82,6 +96,7 @@ class IncomeSerializer(serializers.ModelSerializer):
 
 class ExpenseListSerializer(serializers.ModelSerializer):
     """Serializer for listing expenses (read-only fields for display)"""
+    category = serializers.CharField(source='category.name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     type_display = serializers.CharField(source='get_type_display', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
@@ -128,6 +143,19 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_by', 'last_modified_by', 'created_at', 'updated_at']
+    
+    def to_representation(self, instance):
+        """Convert category FK to category name for reading"""
+        ret = super().to_representation(instance)
+        # Convert category from FK to name
+        if hasattr(instance, 'category'):
+            if isinstance(instance.category, str):
+                # Already a string
+                ret['category'] = instance.category
+            elif instance.category:
+                # It's a ForeignKey object
+                ret['category'] = instance.category.name
+        return ret
 
     def create(self, validated_data):
         category_name = validated_data.pop('category', 'General')

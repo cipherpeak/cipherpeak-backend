@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'task',
     'finance',
     'verification',
+    'reports',
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
