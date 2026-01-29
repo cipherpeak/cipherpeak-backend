@@ -477,8 +477,11 @@ class SalaryPaymentListView(APIView):
         employee_id = request.query_params.get('employee_id')
         
         if employee_id:
-            # Check permissions
-            if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+            # Check permissions: allow if searching for self OR if user has administrative role
+            is_self = str(employee_id) == str(request.user.id)
+            is_admin = request.user.is_superuser or request.user.role in ['admin', 'hr', 'manager', 'director']
+            
+            if not (is_self or is_admin):
                 return Response(
                     {'error': 'You do not have permission to view other employees salary history'},
                     status=status.HTTP_403_FORBIDDEN

@@ -28,19 +28,25 @@ def get_monthly_leave_data(month, year):
     
     for l in all_leaves:
         try:
-            # Attempt to parse dates
-            l_start = datetime.strptime(l.start_date[:10], '%Y-%m-%d').date()
-            l_end = datetime.strptime(l.end_date[:10], '%Y-%m-%d').date()
+            # Attempt to parse dates with more flexibility
+            # Handles 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM:SS', etc.
+            start_str = l.start_date[:10]
+            end_str = l.end_date[:10]
+            
+            l_start = datetime.strptime(start_str, '%Y-%m-%d').date()
+            l_end = datetime.strptime(end_str, '%Y-%m-%d').date()
             
             # Check for overlap
             if l_start <= month_end and l_end >= month_start:
                 monthly_leaves.append({
+                    'employee_id': l.employee.id,
                     'employee_name': l.employee.get_full_name() or l.employee.username,
                     'category': l.category,
                     'start_date': l.start_date,
                     'end_date': l.end_date,
                     'total_days': float(l.total_days),
                     'status': l.get_status_display(),
+                    'status_code': l.status,
                     'reason': l.reason
                 })
         except (ValueError, TypeError, IndexError):
@@ -50,7 +56,7 @@ def get_monthly_leave_data(month, year):
         'details': monthly_leaves,
         'summary': {
             'count': len(monthly_leaves),
-            'total_days': sum(l['total_days'] for l in monthly_leaves)
+            'total_days': sum(l['total_days'] for l in monthly_leaves if l['status_code'] == 'approved')
         }
     }
 
@@ -82,6 +88,7 @@ def get_monthly_client_data(month, year):
         counts_dict = {item['content_type']: item['count'] for item in verified_counts}
 
         client_data.append({
+            'id': cp.client.id,
             'client_name': cp.client.client_name,
             'industry': cp.client.industry,
             'location': cp.client.city,
@@ -159,23 +166,46 @@ def get_monthly_employee_data(month, year):
     # Map leaves to employees for the details view if helpful
     employee_leaves = {}
     for l in leave_report['details']:
-        emp_name = l['employee_name']
-        if emp_name not in employee_leaves:
-            employee_leaves[emp_name] = 0
-        employee_leaves[emp_name] += l['total_days']
+        emp_id = l['employee_id']
+        if emp_id not in employee_leaves:
+            employee_leaves[emp_id] = 0
+        if l['status_code'] == 'approved':
+            employee_leaves[emp_id] += l['total_days']
 
     for sp in payments:
-        emp_name = sp.employee.get_full_name() or sp.employee.username
+        emp = sp.employee
+        emp_name = emp.get_full_name() or emp.username
+        
+        # Calculate tasks for this SPECIFIC employee in this period
+        emp_tasks = Task.objects.filter(
+            assignee=emp,
+            due_date__month=month,
+            due_date__year=year,
+            is_deleted=False
+        )
+        
+        tasks_completed = emp_tasks.filter(status='completed').count()
+        tasks_pending = emp_tasks.filter(status__in=['pending', 'in_progress', 'scheduled']).count()
+
         employee_data.append({
+            'id': emp.id,
             'employee_name': emp_name,
-            'department': sp.employee.department if sp.employee.department else 'N/A',
+            'department': emp.department if emp.department else 'N/A',
+            'designation': emp.designation if emp.designation else 'Staff',
+            'gender': emp.get_gender_display() if emp.gender else 'N/A',
+            'email': emp.email,
+            'phone': emp.phone_number if emp.phone_number else 'N/A',
+            'joining_date': emp.joining_date.strftime('%Y-%m-%d') if emp.joining_date else 'N/A',
             'base_salary': sp.base_salary,
             'incentives': sp.incentives,
             'deductions': sp.deductions,
             'net_paid': sp.net_amount,
             'payment_date': sp.payment_date.strftime('%Y-%m-%d') if sp.payment_date else None,
             'status': sp.get_status_display(),
-            'leaves_count': employee_leaves.get(emp_name, 0)
+            'remarks': sp.remarks,
+            'leaves_count': employee_leaves.get(emp.id, 0),
+            'tasks_completed': tasks_completed,
+            'tasks_pending': tasks_pending
         })
         total_salary += sp.base_salary
         total_incentives += sp.incentives
