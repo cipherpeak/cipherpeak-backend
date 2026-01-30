@@ -25,12 +25,7 @@ class EventCreateSerializer(serializers.ModelSerializer):
         ]
         
     
-    def validate_event_date(self, value):
-        
-        from django.utils import timezone
-        if value < timezone.now():
-            raise serializers.ValidationError("Event date cannot be in the past.")
-        return value
+
 
 
 #user serializer

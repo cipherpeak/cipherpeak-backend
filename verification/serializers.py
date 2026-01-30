@@ -78,8 +78,12 @@ class ContentItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'content_type', 'content_type_display', 
             'completion_date', 'description', 'verified_by', 
-            'verified_by_name', 'is_verified', 'created_at', 'updated_at'
+            'verified_by_name', 'is_verified', 'created_at', 'updated_at',
+            'notes', 'verified_at'
         ]
+    
+    notes = serializers.CharField(source='description', read_only=True)
+    verified_at = serializers.DateTimeField(source='updated_at', read_only=True)
     
     def get_is_verified(self, obj):
         return obj.verified_by is not None

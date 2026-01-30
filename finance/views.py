@@ -135,8 +135,6 @@ class IncomeListCreateView(generics.ListCreateAPIView):
         payment_data = []
         for cp in client_payments:
             eff_date = cp.payment_date.date() if cp.payment_date else cp.scheduled_date
-            remarks = cp.remarks or f"Client Payment for {calendar.month_name[cp.month]} {cp.year}"
-            
             payment_item = {
                 'id': 1000000 + cp.id,
                 'type': 'client_payment',
@@ -150,7 +148,7 @@ class IncomeListCreateView(generics.ListCreateAPIView):
                 'category_name': 'Client Payment',
                 'date': eff_date.strftime('%Y-%m-%d'),
                 'client_name': cp.client.client_name,
-                'remarks': remarks,
+                'remarks': cp.remarks,
                 'reference_number': f"CP-{cp.id}",
                 'is_recurring': False,
                 'recurring_frequency': None,
@@ -187,7 +185,7 @@ class ClientPaymentWrapper:
         self.client_email = payment.client.contact_email
         self.client_phone = payment.client.contact_phone
         
-        self.remarks = payment.remarks or f"Client Payment for {calendar.month_name[payment.month]} {payment.year}"
+        self.remarks = payment.remarks
         self.reference_number = f"CP-{payment.id}"
         
         # Recurring - Defaults
@@ -397,9 +395,6 @@ class ExpenseListCreateView(generics.ListCreateAPIView):
         payment_data = []
         for sp in salary_payments:
             eff_date = sp.payment_date.date() if sp.payment_date else sp.scheduled_date
-            # Correct Remarks as requested by user
-            remarks = sp.remarks or f"Salary Payment for {sp.employee.get_full_name() or sp.employee.username} - {calendar.month_name[sp.month]} {sp.year}"
-            
             payment_item = {
                 'id': 2000000 + sp.id,
                 'type': 'employee_salaries',
@@ -410,7 +405,7 @@ class ExpenseListCreateView(generics.ListCreateAPIView):
                 'category_name': 'Employee Salaries',
                 'date': eff_date.strftime('%Y-%m-%d'),
                 'vendor_name': sp.employee.get_full_name() or sp.employee.username,
-                'remarks': remarks,
+                'remarks': sp.remarks,
                 'reference_number': f"SAL-{sp.id}",
                 'is_recurring': False,
                 'recurring_frequency': None,
@@ -442,7 +437,7 @@ class SalaryPaymentWrapper:
         self.vendor_email = payment.employee.email
         self.vendor_phone = payment.employee.phone_number
         
-        self.remarks = payment.remarks or f"Salary Payment for {self.vendor_name} - {calendar.month_name[payment.month]} {payment.year}"
+        self.remarks = payment.remarks
         self.reference_number = f"SAL-{payment.id}"
         
         # Recurring - Defaults

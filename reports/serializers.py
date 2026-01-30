@@ -103,6 +103,8 @@ class ClientReportDetailSerializer(serializers.Serializer):
     transaction_id = serializers.CharField(allow_blank=True, allow_null=True)
     status = serializers.CharField()
     remarks = serializers.CharField(allow_blank=True, allow_null=True)
+    contact_email = serializers.CharField(required=False, allow_null=True)
+    contact_phone = serializers.CharField(required=False, allow_null=True)
     
     # Content Verification Fields
     videos_target = serializers.IntegerField(default=0)
@@ -123,6 +125,7 @@ class EmployeeReportDetailSerializer(serializers.Serializer):
     net_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
     payment_date = serializers.DateField(allow_null=True)
     status = serializers.CharField()
+    remarks = serializers.CharField(allow_blank=True, allow_null=True)
     leaves_count = serializers.DecimalField(max_digits=5, decimal_places=2)
 
 class LeaveReportDetailSerializer(serializers.Serializer):
@@ -146,3 +149,5 @@ class GeneralTransactionDetailSerializer(serializers.Serializer):
     remarks = serializers.CharField(allow_blank=True, allow_null=True)
     payment_method = serializers.CharField(allow_blank=True, allow_null=True)
     status = serializers.CharField()
+    contact_email = serializers.CharField(required=False, allow_null=True)
+    contact_phone = serializers.CharField(required=False, allow_null=True)
