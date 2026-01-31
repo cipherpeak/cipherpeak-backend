@@ -350,8 +350,12 @@ class LeaveManagement(models.Model):
         null=True
     )
     
-    
-    
+    address_during_leave = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Address During Leave"
+    )
+
     attachment = models.FileField(
         upload_to='leave_attachments/',
         blank=True,

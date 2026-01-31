@@ -533,7 +533,7 @@ class LeaveCreateSerializer(serializers.ModelSerializer):
             'end_date',
             'total_days',
             'reason',
-           
+            'address_during_leave',
             'attachment',
         ]
 
@@ -573,7 +573,7 @@ class LeaveUpdateSerializer(serializers.ModelSerializer):
             'end_date', 
             'total_days', 
             'reason', 
-            
+            'address_during_leave',
             'attachment',
             'status', 
             'remarks',

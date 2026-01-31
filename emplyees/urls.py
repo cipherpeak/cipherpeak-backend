@@ -11,14 +11,15 @@ urlpatterns = [
     #employee listing
     path('employees/', views.EmployeeListView.as_view(), name='employee_list'),
        
-   #employee detail url
-    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
-
     #Employee Creation
     path('employees/create/', views.EmployeeCreateView.as_view(), name='create_employee'),
-    
+
+    #employee detail url
+    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+
     # update employee details
     path('employees/<int:employee_id>/update/', views.EmployeeUpdateView.as_view(), name='update_employee'),
+
     
     #Employee document_upload_url
     path('employees/upload_document/<int:employee_id>/', views.EmployeeDocumentCreateView.as_view(), name='upload_document'),

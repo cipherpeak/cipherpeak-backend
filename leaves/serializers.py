@@ -1,23 +1,47 @@
 from rest_framework import serializers
-from .models import LeaveApplication
-from django.utils import timezone
+from emplyees.models import LeaveManagement
+from datetime import datetime
 
 class LeaveApplicationSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     employee_details = serializers.SerializerMethodField()
     approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
     monthly_leave_count = serializers.SerializerMethodField()
+    leave_type = serializers.CharField(source='category', read_only=True)
+    applied_date = serializers.DateTimeField(source='created_at', read_only=True)
+    status = serializers.SerializerMethodField()
+    address_during_leave = serializers.SerializerMethodField()
+    
 
     class Meta:
-        model = LeaveApplication
+        model = LeaveManagement
         fields = [
             'id', 'employee', 'employee_name', 'employee_details',
             'leave_type', 'start_date', 'end_date', 'total_days',
-            'reason', 'address_during_leave', 'passport_required_from',
-            'passport_required_to', 'status', 'applied_date',
+            'reason', 'status', 'applied_date',
             'approved_by', 'approved_by_name', 'monthly_leave_count',
-            'attachment', 'remarks', 'approved_at'
+            'attachment', 'remarks', 'approved_at',
+            'address_during_leave', 
         ]
+
+    def get_status(self, obj):
+        if obj.status != 'approved':
+            return obj.status
+        
+        try:
+            today = datetime.now().date()
+            start = datetime.strptime(obj.start_date, '%Y-%m-%d').date()
+            end = datetime.strptime(obj.end_date, '%Y-%m-%d').date()
+            
+            if today > end:
+                return 'approved' # Past
+            if start <= today <= end:
+                return 'active'
+            if start > today:
+                return 'upcoming'
+        except:
+            pass
+        return obj.status
 
     def get_employee_details(self, obj):
         user = obj.employee
@@ -34,14 +58,32 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
         }
 
     def get_monthly_leave_count(self, obj):
-        month = obj.start_date.month
-        year = obj.start_date.year
-        return LeaveApplication.objects.filter(
-            employee=obj.employee,
-            status='approved',
-            start_date__month=month,
-            start_date__year=year
-        ).count()
+        try:
+            # Handle string dates in LeaveManagement
+            if isinstance(obj.start_date, str):
+                date_obj = datetime.strptime(obj.start_date, '%Y-%m-%d')
+                month = date_obj.month
+                year = date_obj.year
+            else:
+                month = obj.start_date.month
+                year = obj.start_date.year
+            
+            return LeaveManagement.objects.filter(
+                employee=obj.employee,
+                status='approved',
+                start_date__icontains=f"{year}-{month:02d}"
+            ).count()
+        except:
+            return 0
+
+    def get_address_during_leave(self, obj):
+        """Return the address during leave or 'Not Provided' if empty"""
+        address = obj.address_during_leave
+        # Check if address exists and is not just whitespace
+        if address and str(address).strip():
+            return str(address).strip()
+        return 'Not Provided'
+
 
 class LeaveProcessSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['approve', 'reject'])

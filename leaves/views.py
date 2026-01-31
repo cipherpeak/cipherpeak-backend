@@ -3,25 +3,40 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.utils import timezone
-from .models import LeaveApplication
+from emplyees.models import LeaveManagement
 from .serializers import LeaveApplicationSerializer, LeaveProcessSerializer
+from datetime import datetime
 
 class LeaveListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         # Admin roles see all, others see own (though this page is for Admin)
-        if (request.user.role in ['admin', 'superuser'] or 
-            request.user.user_type in ['hr', 'manager', 'director'] or 
-            request.user.is_superuser):
-            leaves = LeaveApplication.objects.all()
+        user = request.user
+        role_lower = (user.role or '').lower()
+        user_type_lower = (user.user_type or '').lower()
+        
+        is_admin = (
+            role_lower in ['admin', 'superuser'] or 
+            user_type_lower in ['hr', 'manager', 'director', 'admin'] or 
+            user.is_superuser
+        )
+
+        if is_admin:
+            leaves = LeaveManagement.objects.all()
         else:
-            leaves = LeaveApplication.objects.filter(employee=request.user)
+            leaves = LeaveManagement.objects.filter(employee=user)
 
         # Filtering
         status_filter = request.query_params.get('status')
         if status_filter:
-            leaves = leaves.filter(status=status_filter)
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            if status_filter == 'active':
+                leaves = leaves.filter(status='approved', start_date__lte=today_str, end_date__gte=today_str)
+            elif status_filter == 'upcoming':
+                leaves = leaves.filter(status='approved', start_date__gt=today_str)
+            else:
+                leaves = leaves.filter(status=status_filter)
 
         employee_filter = request.query_params.get('employee')
         if employee_filter:
@@ -37,24 +52,44 @@ class LeaveListView(APIView):
 
         leave_type = request.query_params.get('leave_type')
         if leave_type:
-            leaves = leaves.filter(leave_type=leave_type)
+            leaves = leaves.filter(category=leave_type)
 
         serializer = LeaveApplicationSerializer(leaves, many=True)
         return Response(serializer.data)
 
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+
+@method_decorator(csrf_exempt, name='dispatch')
 class LeaveProcessView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def post(self, request, pk):
-        if (request.user.role not in ['admin', 'superuser'] and 
-            request.user.user_type not in ['hr', 'manager', 'director'] and 
-            not request.user.is_superuser):
-            return Response({"error": "Only admins can process leaves"}, status=status.HTTP_403_FORBIDDEN)
+        user = request.user
+        role_lower = (user.role or '').lower()
+        user_type_lower = (user.user_type or '').lower()
+        
+        is_admin = (
+            role_lower in ['admin', 'superuser'] or 
+            user_type_lower in ['hr', 'manager', 'director', 'admin'] or 
+            user.is_superuser
+        )
+
+        if not is_admin:
+            return Response({
+                "error": "Only admins can process leaves",
+                "debug": {
+                    "role": role_lower,
+                    "user_type": user_type_lower,
+                    "is_superuser": user.is_superuser,
+                    "username": user.username
+                }
+            }, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            leave = LeaveApplication.objects.get(pk=pk)
-        except LeaveApplication.DoesNotExist:
+            leave = LeaveManagement.objects.get(pk=pk)
+        except LeaveManagement.DoesNotExist:
             return Response({"error": "Leave application not found"}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = LeaveProcessSerializer(data=request.data)
