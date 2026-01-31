@@ -30,4 +30,5 @@ urlpatterns = [
     path('api/finance/', include('finance.urls')), 
     path('api/reports/', include('reports.urls')), 
     path('api/', include('verification.urls')),
+    path('leaves-api/', include('leaves.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

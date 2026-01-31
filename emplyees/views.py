@@ -749,7 +749,7 @@ class LeaveListView(APIView):
         user = request.user
         status_filter = request.query_params.get('status')
 
-        if user.role in ['manager', 'hr', 'admin', 'director']:
+        if user.is_superuser or user.role in ['manager', 'hr', 'admin', 'director']:
             leaves = LeaveManagement.objects.select_related(
                 'employee', 'approved_by'
             )

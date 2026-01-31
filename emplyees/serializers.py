@@ -277,14 +277,15 @@ class EmployeeMediaCreateSerializer(serializers.ModelSerializer):
 #Leave list serializer
 class LeaveListSerializer(serializers.ModelSerializer):
     employee_name = serializers.SerializerMethodField()
-    employee_id = serializers.IntegerField(source='employee.id', read_only=True)
+    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     approved_by_name = serializers.SerializerMethodField()
+    applied_date = serializers.DateTimeField(source='created_at', read_only=True)
 
     class Meta:
         model = LeaveManagement
         fields = [
             'id', 'employee_name', 'employee_id', 'category', 'start_date', 'end_date',
-            'total_days', 'reason', 'status', 'created_at',
+            'total_days', 'reason', 'status', 'created_at', 'applied_date',
             'approved_by_name', 'approved_at', 'remarks', 'attachment'
         ]
 
