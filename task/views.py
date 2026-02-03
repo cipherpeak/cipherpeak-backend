@@ -254,3 +254,44 @@ class TaskDeleteView(APIView):
 
 
 
+#task status update view
+class TaskStatusUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id):
+        try:
+            task = Task.objects.get(id=id)
+        except Task.DoesNotExist:
+            return Response(
+                {"error": "Task not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Permission check
+        user = request.user
+        if not user.is_superuser and user.role not in ['admin', 'director', 'managing_director']:
+            if task.assignee != user:
+                return Response(
+                    {"error": "Permission denied"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        new_status = request.data.get('status')
+        if not new_status:
+            return Response(
+                {"error": "Status is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update status
+        task.status = new_status
+        task.save()
+        
+        return Response(
+            {
+                "message": "Task status updated successfully",
+                "status": task.status,
+                "status_display": task.get_status_display()
+            },
+            status=status.HTTP_200_OK
+        )

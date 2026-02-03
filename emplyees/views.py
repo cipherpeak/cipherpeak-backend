@@ -42,9 +42,16 @@ class LoginView(APIView):
             refresh = RefreshToken.for_user(user)
             return Response({
                 'user': user.role,
+                'user_info': {
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'username': user.username,
+                    'id': user.id,
+                },
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-            })
+            }) 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

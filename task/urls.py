@@ -18,5 +18,8 @@ urlpatterns = [
     #delete task
     path('task/<int:id>/delete/', views.TaskDeleteView.as_view(), name='delete_task'),  
 
+    #status update
+    path('task/<int:id>/status/', views.TaskStatusUpdateView.as_view(), name='task-status-update'),
+
     
 ]
