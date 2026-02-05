@@ -12,196 +12,227 @@ from .serializers import (
     MarkContentVerifiedSerializer
 )
 from clientapp.models import Client
-from datetime import datetime
+from datetime import datetime, date
 from django.utils import timezone
 
-
-
-
-# API 1: Get list of clients with pending verifications
-class PendingClientsListView(APIView):
+# API 5: Verification Dashboard - Spreadsheet Style Summary
+class VerificationDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
         """
-        Returns two arrays of clients with pending verifications:
-        - current_month: Clients with pending work from current month
-        - previous_months: Clients with pending work from previous months (overdue)
+        Returns a summary for ALL active clients for the current month, formatted for the dashboard.
         """
-        from django.utils import timezone
-        
         today = timezone.now().date()
-        current_month = today.month
-        current_year = today.year
         
-        # Get all verifications that are not verified (verified_by is null)
-        pending_verifications = ClientVerification.objects.filter(
-            verified_by__isnull=True
-        ).select_related('client')
-        
-        # Separate into current month and previous months
-        current_month_data = {}
-        previous_months_data = {}
-        
-        for verification in pending_verifications:
-            client_id = verification.client.id
-            created_date = verification.created_at.date()
+        # Get month/year from query params, default to current month/year
+        try:
+            current_month = int(request.query_params.get('month', today.month))
+            current_year = int(request.query_params.get('year', today.year))
+        except (ValueError, TypeError):
+            current_month = today.month
+            current_year = today.year
             
-            # Determine if this is current month or previous month
-            is_current_month = (created_date.month == current_month and 
-                              created_date.year == current_year)
+        # Target date for logic consistency
+        target_date = date(current_year, current_month, 1)
+        start_of_month = timezone.make_aware(datetime(current_year, current_month, 1))
+        
+        # Get all active clients
+        clients = Client.objects.filter(is_deleted=False).exclude(status='terminated')
+        
+        dashboard_data = []
+        
+        for client in clients:
+            # Quotas (Total)
+            poster_quota = client.posters_per_month
+            video_quota = client.videos_per_month
             
-            # Choose the appropriate dictionary
-            target_dict = current_month_data if is_current_month else previous_months_data
+            # Posted (Verified)
+            base_verified = ClientVerification.objects.filter(
+                client=client,
+                verified_by__isnull=False,
+                completion_date__month=current_month,
+                completion_date__year=current_year
+            )
             
-            if client_id not in target_dict:
-                target_dict[client_id] = {
-                    'client_id': client_id,
-                    'client_name': verification.client.client_name,
-                    'completion_date': verification.completion_date or created_date,
-                    'status': 'Pending',
-                    'pending_count': 0
-                }
-            target_dict[client_id]['pending_count'] += 1
+            posted_videos = base_verified.filter(content_type='video').count()
+            posted_posters = base_verified.filter(content_type='poster').count()
             
-            # Update to the latest date
-            current_date = verification.completion_date or created_date
-            if current_date > target_dict[client_id]['completion_date']:
-                target_dict[client_id]['completion_date'] = current_date
-        
-        # Convert to lists
-        current_month_list = list(current_month_data.values())
-        previous_months_list = list(previous_months_data.values())
-        
-        # Sort by completion_date (most recent first)
-        current_month_list.sort(key=lambda x: x['completion_date'], reverse=True)
-        previous_months_list.sort(key=lambda x: x['completion_date'], reverse=True)
-        
-        # Serialize both arrays
-        current_month_serialized = PendingClientSerializer(current_month_list, many=True).data
-        previous_months_serialized = PendingClientSerializer(previous_months_list, many=True).data
-        
-        return Response({
-            'current_month': current_month_serialized,
-            'previous_months': previous_months_serialized
-        }, status=status.HTTP_200_OK)
+            # Pending (Unverified)
+            base_pending = ClientVerification.objects.filter(
+                client=client,
+                verified_by__isnull=True
+            )
+            
+            pending_videos = base_pending.filter(content_type='video').count()
+            pending_posters = base_pending.filter(content_type='poster').count()
+            
+            # Roll-over flag
+            has_overdue = base_pending.filter(
+                Q(completion_date__lt=target_date) | 
+                Q(created_at__lt=start_of_month)
+            ).exists()
+            
+            # Payment check
+            is_paid = client.current_month_payment_status in ['paid', 'early_paid']
+            is_current_or_future = (current_year > today.year) or (current_year == today.year and current_month >= today.month)
+            
+            payment_satisfied = not is_current_or_future or is_paid
+
+            is_verified = (
+                posted_posters >= poster_quota and 
+                posted_videos >= video_quota and 
+                pending_posters == 0 and
+                pending_videos == 0 and
+                payment_satisfied
+            )
+            
+            dashboard_data.append({
+                'client_id': client.id,
+                'client_name': client.client_name,
+                'poster_quota': poster_quota,
+                'video_quota': video_quota,
+                'posted_posters': posted_posters,
+                'posted_videos': posted_videos,
+                'pending_videos': pending_videos,
+                'pending_posters': pending_posters,
+                'has_overdue': has_overdue,
+                'is_verified': is_verified,
+                'payment_date': client.next_payment_date,
+                'payment_status': client.current_month_payment_status,
+                'industry': client.get_industry_display() if client.industry else 'N/A' 
+            })
+            
+        return Response(dashboard_data, status=status.HTTP_200_OK)
 
 
-
-
-# API 2: Get details of a specific client's content (videos and posters)
-class ClientContentDetailsView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get(self, request, client_id):
-        """
-        Returns detailed information about videos and posters for a specific client.
-        Includes verification status for each content item.
-        """
-        # Check if client exists
-        client = get_object_or_404(Client, id=client_id, is_deleted=False)
-        
-        # Get only videos and posters for this client
-        videos = ClientVerification.objects.filter(
-            client=client,
-            content_type='video'
-        ).order_by('-completion_date')
-        
-        posters = ClientVerification.objects.filter(
-            client=client,
-            content_type='poster'
-        ).order_by('-completion_date')
-        
-        # Calculate totals (only for videos and posters)
-        all_content = ClientVerification.objects.filter(
-            client=client,
-            content_type__in=['video', 'poster']
-        )
-        total_pending = all_content.filter(verified_by__isnull=True).count()
-        total_verified = all_content.filter(verified_by__isnull=False).count()
-        
-        # Prepare response data
-        data = {
-            'client_id': client.id,
-            'client_name': client.client_name,
-            'videos': ContentItemSerializer(videos, many=True).data,
-            'posters': ContentItemSerializer(posters, many=True).data,
-            'total_pending': total_pending,
-            'total_verified': total_verified,
-        }
-        
-        return Response(data, status=status.HTTP_200_OK)
-
-
-# API 3: Mark a content item as verified
-class MarkContentVerifiedView(APIView):
+class MarkClientVerifiedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
-        """
-        Mark a specific content verification as done.
-        Saves the current date and the current user as verified_by.
+        client_id = request.data.get('client_id')
+        if not client_id:
+            return Response({'error': 'client_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        client = get_object_or_404(Client, id=client_id)
         
-        Request body: { "verification_id": <id> }
-        """
-        serializer = MarkContentVerifiedSerializer(data=request.data)
+        today = timezone.now().date()
+        current_month = request.data.get('month', today.month)
+        current_year = request.data.get('year', today.year)
+        target_date = date(int(current_year), int(current_month), 1)
         
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        pending_verifications = ClientVerification.objects.filter(
+            client=client,
+            verified_by__isnull=True
+        )
         
-        verification_id = serializer.validated_data['verification_id']
+        count = pending_verifications.count()
         
-        # Get the verification object
-        verification = get_object_or_404(ClientVerification, id=verification_id)
-        
-        # Check if already verified
-        if verification.verified_by is not None:
-            return Response(
-                {'error': 'This content has already been verified.'},
-                status=status.HTTP_400_BAD_REQUEST
+        if count > 0:
+            pending_verifications.update(
+                verified_by=request.user,
+                completion_date=target_date,
+                updated_at=timezone.now()
+            )
+        else:
+            ClientVerification.objects.create(
+                client=client,
+                content_type='poster', 
+                verified_by=request.user,
+                completion_date=target_date,
+                description=f"Monthly verification sign-off for {target_date.strftime('%B %Y')}",
+                updated_at=timezone.now()
             )
         
-        # Mark as verified
-        verification.verified_by = request.user
-        verification.completion_date = timezone.now().date()
-        verification.save()
-        
-        # Return updated verification data
-        response_serializer = ContentItemSerializer(verification)
         return Response({
-            'message': 'Content marked as verified successfully.',
-            'data': response_serializer.data
+            'message': f'Successfully verified {client.client_name}',
+            'count': count
         }, status=status.HTTP_200_OK)
 
 
-# API 4: Get list of all completed/verified work
-class CompletedWorkListView(APIView):
+class UpdatePostedCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
-    def get(self, request):
-        """
-        Returns list of all completed/verified work.
-        Each item contains client info, content details, and verification info.
-        """
-        # Get all verified work (verified_by is not null)
-        completed_verifications = ClientVerification.objects.filter(
-            verified_by__isnull=False,
-            content_type__in=['video', 'poster']
-        ).select_related('client', 'verified_by').order_by('-completion_date')
+    def post(self, request):
+        client_id = request.data.get('client_id')
+        content_type = request.data.get('content_type')
+        new_count = request.data.get('count')
         
-        # Serialize the data
-        serializer = ContentItemSerializer(completed_verifications, many=True)
+        if client_id is None or not content_type or new_count is None:
+            return Response({'error': 'client_id, content_type, and count are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        client = get_object_or_404(Client, id=client_id)
         
-        # Add client name to each item
-        result = []
-        for verification in completed_verifications:
-            item_data = ContentItemSerializer(verification).data
-            item_data['client_id'] = verification.client.id
-            item_data['client_name'] = verification.client.client_name
-            result.append(item_data)
+        type_map = {'posters': 'poster', 'videos': 'video'}
+        db_type = type_map.get(content_type)
+        if not db_type:
+            return Response({'error': 'Invalid content_type'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        today = timezone.now().date()
+        current_month = request.data.get('month', today.month)
+        current_year = request.data.get('year', today.year)
+        target_date = date(int(current_year), int(current_month), 1)
         
-        return Response({
-            'completed_work': result,
-            'total_count': len(result)
-        }, status=status.HTTP_200_OK)
+        existing_items = ClientVerification.objects.filter(
+            client=client,
+            content_type=db_type,
+            completion_date__month=current_month,
+            completion_date__year=current_year
+        )
+        
+        current_count = existing_items.count()
+        
+        if int(new_count) > current_count:
+            to_create = int(new_count) - current_count
+            placeholders = []
+            for _ in range(to_create):
+                placeholders.append(ClientVerification(
+                    client=client,
+                    content_type=db_type,
+                    verified_by=None,
+                    completion_date=target_date,
+                    description=f"Auto-generated for {content_type} count update",
+                    updated_at=timezone.now()
+                ))
+            ClientVerification.objects.bulk_create(placeholders)
+            message = f"Added {to_create} pending {db_type} items"
+        elif int(new_count) < current_count:
+            to_remove = current_count - int(new_count)
+            unverified_to_remove = existing_items.filter(verified_by__isnull=True).order_by('-id')[:to_remove]
+            remaining = to_remove - unverified_to_remove.count()
+            ids_to_remove = list(unverified_to_remove.values_list('id', flat=True))
+            
+            if remaining > 0:
+                verified_to_remove = existing_items.filter(verified_by__isnull=False).order_by('-id')[:remaining]
+                ids_to_remove.extend(list(verified_to_remove.values_list('id', flat=True)))
+                
+            ClientVerification.objects.filter(id__in=ids_to_remove).delete()
+            message = f"Removed {to_remove} {db_type} items"
+        else:
+            message = "No changes needed"
+            
+        return Response({'message': message, 'count': new_count}, status=status.HTTP_200_OK)
 
+
+class UpdateQuotaView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        client_id = request.data.get('client_id')
+        content_type = request.data.get('content_type')
+        new_quota = request.data.get('quota')
+        
+        if client_id is None or not content_type or new_quota is None:
+            return Response({'error': 'client_id, content_type, and quota are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        client = get_object_or_404(Client, id=client_id)
+        
+        if content_type == 'quota_posters' or content_type == 'posters':
+            client.posters_per_month = int(new_quota)
+        elif content_type == 'quota_videos' or content_type == 'videos':
+            client.videos_per_month = int(new_quota)
+        else:
+            return Response({'error': 'Invalid content_type for quota update'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        client.save()
+        return Response({'message': 'Quota updated successfully', 'quota': new_quota}, status=status.HTTP_200_OK)
