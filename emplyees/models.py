@@ -258,13 +258,10 @@ class CameraDepartment(models.Model):
         ('low', 'Low'),
         ('urgent', 'Urgent'),
     ]
-
-    employee = models.ForeignKey(
-        CustomUser,  
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        related_name='camera_department_projects'
+    file_path = models.CharField(
+        max_length=500, 
+        help_text="Path to the file on local system/network",
+        default="not uploaded",
     )
 
     client = models.ForeignKey(
