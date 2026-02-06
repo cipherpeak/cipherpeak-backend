@@ -726,7 +726,20 @@ class CameraDepartmentDetailView(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    def delete(self, request, pk):
+        project = self.get_object(pk)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
+            'camera_department', 'content_creator', 'manager', 'hr'
+        ]:
+            return Response(
+                {'error': 'You do not have permission to delete camera department projects'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        project.delete()
+        return Response({'message': 'Project deleted successfully'})
 
 #Leave create view 
 class LeaveCreateView(APIView):

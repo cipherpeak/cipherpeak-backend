@@ -479,11 +479,11 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 # camera department list serializer
 class CameraDepartmentListSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    employee_name = serializers.SerializerMethodField()
+   
     class Meta:
         model = CameraDepartment
         fields = [
-            'id', 'client', 'client_name', 'uploaded_date', 'priority','link','employee_name'
+            'id', 'client', 'client_name', 'uploaded_date', 'priority','link','file_path'
         ]
 
     def get_employee_name(self, obj):
@@ -500,7 +500,7 @@ class CameraDepartmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CameraDepartment
         fields = [
-            'client', 'client_name', 'uploaded_date', 'priority', 'link'
+            'client', 'client_name', 'uploaded_date', 'priority', 'link','file_path'
         ]
         
 
@@ -512,7 +512,7 @@ class CameraDepartmentDetailSerializer(serializers.ModelSerializer):
         model = CameraDepartment
         fields = [
             'id', 'client', 'client_name',  
-            'uploaded_date', 'priority', 'link','employee_name'
+            'uploaded_date', 'priority', 'link','file_path'
         ]
 
     def get_employee_name(self, obj):

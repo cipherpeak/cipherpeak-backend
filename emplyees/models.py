@@ -264,6 +264,14 @@ class CameraDepartment(models.Model):
         default="not uploaded",
     )
 
+    employee = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='camera_department_projects',
+        blank=True,
+        null=True
+    )
+
     client = models.ForeignKey(
         'clientapp.Client',
         on_delete=models.CASCADE,
