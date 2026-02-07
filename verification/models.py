@@ -7,7 +7,8 @@ class ClientVerification(models.Model):
         ('poster', 'Poster'),  
     ]
     client = models.ForeignKey('clientapp.Client', on_delete=models.CASCADE, related_name='verifications')
-    content_type = models.CharField(max_length=10, choices=CONTENT_TYPE_CHOICES)
+    content_type = models.CharField(max_length=10, choices=CONTENT_TYPE_CHOICES, default='poster')
+    
     verified_by = models.ForeignKey(
         'emplyees.CustomUser', 
         on_delete=models.SET_NULL, 

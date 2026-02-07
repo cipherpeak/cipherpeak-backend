@@ -1,5 +1,5 @@
 from django.db import models
-from decimal import Decimal
+from decimal import Decimal 
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator
 from django.utils import timezone
@@ -23,13 +23,13 @@ class CustomUser(AbstractUser):
     ]
     
     STATUS_CHOICES = [
-        ('active', 'Active'),
+        ('active', 'Activ e'),
         ('on_leave', 'On Leave'),
         ('probation_period', 'Probation Period'),
         ('notice_period', 'Notice Period'),
         ('inactive', 'Inactive'),
         ('terminated', 'Terminated'),
-    ]
+    ] 
     
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)

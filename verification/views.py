@@ -4,18 +4,18 @@ from rest_framework import permissions, status
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q
 from .models import ClientVerification
-from .serializers import (
-    ClientVerificationSerializer, 
-    PendingClientSerializer,
-    ClientContentDetailSerializer,
-    ContentItemSerializer,
-    MarkContentVerifiedSerializer
-)
 from clientapp.models import Client
 from datetime import datetime, date
 from django.utils import timezone
+from django.db.models import Sum, Q
+from .serializers import (
+    VerificationDashboardSerializer,
+    MarkClientVerifiedSerializer,
+    UpdatePostedCountSerializer,
+    UpdateQuotaSerializer
+)
 
-# API 5: Verification Dashboard - Spreadsheet Style Summary
+
 class VerificationDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
@@ -73,18 +73,11 @@ class VerificationDashboardView(APIView):
                 Q(created_at__lt=start_of_month)
             ).exists()
             
-            # Payment check
-            is_paid = client.current_month_payment_status in ['paid', 'early_paid']
-            is_current_or_future = (current_year > today.year) or (current_year == today.year and current_month >= today.month)
-            
-            payment_satisfied = not is_current_or_future or is_paid
-
             is_verified = (
                 posted_posters >= poster_quota and 
                 posted_videos >= video_quota and 
                 pending_posters == 0 and
-                pending_videos == 0 and
-                payment_satisfied
+                pending_videos == 0
             )
             
             dashboard_data.append({
@@ -98,27 +91,26 @@ class VerificationDashboardView(APIView):
                 'pending_posters': pending_posters,
                 'has_overdue': has_overdue,
                 'is_verified': is_verified,
-                'payment_date': client.next_payment_date,
-                'payment_status': client.current_month_payment_status,
                 'industry': client.get_industry_display() if client.industry else 'N/A' 
             })
             
-        return Response(dashboard_data, status=status.HTTP_200_OK)
-
+        serializer = VerificationDashboardSerializer(dashboard_data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class MarkClientVerifiedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
-        client_id = request.data.get('client_id')
-        if not client_id:
-            return Response({'error': 'client_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = MarkClientVerifiedSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
+        client_id = serializer.validated_data.get('client_id')
         client = get_object_or_404(Client, id=client_id)
         
         today = timezone.now().date()
-        current_month = request.data.get('month', today.month)
-        current_year = request.data.get('year', today.year)
+        current_month = serializer.validated_data.get('month', today.month)
+        current_year = serializer.validated_data.get('year', today.year)
         target_date = date(int(current_year), int(current_month), 1)
         
         pending_verifications = ClientVerification.objects.filter(
@@ -154,23 +146,22 @@ class UpdatePostedCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
-        client_id = request.data.get('client_id')
-        content_type = request.data.get('content_type')
-        new_count = request.data.get('count')
-        
-        if client_id is None or not content_type or new_count is None:
-            return Response({'error': 'client_id, content_type, and count are required'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = UpdatePostedCountSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        client_id = serializer.validated_data.get('client_id')
+        content_type = serializer.validated_data.get('content_type')
+        new_count = serializer.validated_data.get('count')
             
         client = get_object_or_404(Client, id=client_id)
         
         type_map = {'posters': 'poster', 'videos': 'video'}
         db_type = type_map.get(content_type)
-        if not db_type:
-            return Response({'error': 'Invalid content_type'}, status=status.HTTP_400_BAD_REQUEST)
-            
+        
         today = timezone.now().date()
-        current_month = request.data.get('month', today.month)
-        current_year = request.data.get('year', today.year)
+        current_month = serializer.validated_data.get('month', today.month)
+        current_year = serializer.validated_data.get('year', today.year)
         target_date = date(int(current_year), int(current_month), 1)
         
         existing_items = ClientVerification.objects.filter(
@@ -218,12 +209,13 @@ class UpdateQuotaView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
-        client_id = request.data.get('client_id')
-        content_type = request.data.get('content_type')
-        new_quota = request.data.get('quota')
-        
-        if client_id is None or not content_type or new_quota is None:
-            return Response({'error': 'client_id, content_type, and quota are required'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = UpdateQuotaSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        client_id = serializer.validated_data.get('client_id')
+        content_type = serializer.validated_data.get('content_type')
+        new_quota = serializer.validated_data.get('quota')
             
         client = get_object_or_404(Client, id=client_id)
         
@@ -231,8 +223,6 @@ class UpdateQuotaView(APIView):
             client.posters_per_month = int(new_quota)
         elif content_type == 'quota_videos' or content_type == 'videos':
             client.videos_per_month = int(new_quota)
-        else:
-            return Response({'error': 'Invalid content_type for quota update'}, status=status.HTTP_400_BAD_REQUEST)
         
         client.save()
         return Response({'message': 'Quota updated successfully', 'quota': new_quota}, status=status.HTTP_200_OK)

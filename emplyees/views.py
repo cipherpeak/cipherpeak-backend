@@ -48,6 +48,7 @@ class LoginView(APIView):
                     'last_name': user.last_name,
                     'username': user.username,
                     'id': user.id,
+                    'user_type': user.user_type, 
                 },
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -666,7 +667,18 @@ class CameraDepartmentListView(APIView):
             projects = projects.filter(client_id=client_id)
             
         serializer = CameraDepartmentListSerializer(projects, many=True)
-        return Response(serializer.data)
+        
+        # Check if user can create projects
+        can_create = (
+            request.user.is_superuser or 
+            request.user.role in ['admin'] or 
+            request.user.user_type in ['camera_department', 'content_creator', 'manager', 'hr', 'editor']
+        )
+        
+        return Response({
+            'projects': serializer.data,
+            'can_create': can_create
+        })
 
 
 #camera department create view
@@ -676,7 +688,7 @@ class CameraDepartmentCreateView(APIView):
     def post(self, request):
         
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
-            'camera_department', 'content_creator', 'manager', 'hr'
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
         ]:
             return Response(
                 {'error': 'You do not have permission to create camera department projects'},
@@ -714,7 +726,7 @@ class CameraDepartmentDetailView(APIView):
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
-            'camera_department', 'content_creator', 'manager', 'hr'
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
         ]:
             return Response(
                 {'error': 'You do not have permission to update camera department projects'},
@@ -732,7 +744,7 @@ class CameraDepartmentDetailView(APIView):
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
-            'camera_department', 'content_creator', 'manager', 'hr'
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
         ]:
             return Response(
                 {'error': 'You do not have permission to delete camera department projects'},
