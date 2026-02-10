@@ -8,7 +8,7 @@ from django.contrib.auth import login
 from django.db.models import Prefetch
 from django.utils import timezone
 from datetime import date
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, Announcement
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
@@ -30,7 +30,8 @@ from .serializers import (
     LeaveUpdateSerializer,
     SalaryPaymentSerializer,
     PaymentDetailSerializer,
-    LeaveApprovalRejectSerializer
+    LeaveApprovalRejectSerializer,
+    AnnouncementSerializer
 )
 
 # login view 
@@ -972,4 +973,76 @@ class LeaveBalanceView(APIView):
         
         serializer = LeaveBalanceSerializer(balance)
         return Response(serializer.data)
+
+
+# Announcement ViewSet
+class AnnouncementViewSet(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        announcements = Announcement.objects.filter(is_active=True).select_related('created_by')
+        serializer = AnnouncementSerializer(announcements, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    def post(self, request):
+        # Only admins/directors can post announcements
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can post announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = AnnouncementSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AnnouncementDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return Announcement.objects.get(pk=pk)
+        except Announcement.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AnnouncementSerializer(announcement, context={'request': request})
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can update announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = AnnouncementSerializer(announcement, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can delete announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        announcement.is_active = False # Soft delete
+        announcement.save()
+        return Response({'message': 'Announcement deleted successfully'})
 

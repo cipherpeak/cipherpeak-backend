@@ -427,7 +427,21 @@ class LeaveBalance(models.Model):
 
     def __str__(self):
         return f"{self.employee.employee_id} - {self.year} Balance"
+class Announcement(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='announcements'
+    )
+    is_active = models.BooleanField(default=True)
 
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Announcement"
+        verbose_name_plural = "Announcements"
 
-
-
+    def __str__(self):
+        return f"{self.title} - {self.created_at.strftime('%Y-%m-%d')}"

@@ -56,8 +56,10 @@ urlpatterns = [
     path('salary-payment-history/', views.SalaryPaymentListView.as_view(), name='salary-payment-history'),
     path('process-salary-payment/<int:pk>/', views.ProcessSalaryPaymentView.as_view(), name='process-salary-payment'),
     path('payments/<int:id>/', views.PaymentDetailView.as_view(), name='payment-detail'),
-    
-   
+
+    # Announcements
+    path('announcements/', views.AnnouncementViewSet.as_view(), name='announcement-list'),
+    path('announcements/<int:pk>/', views.AnnouncementDetailView.as_view(), name='announcement-detail'),
 ]
 
 

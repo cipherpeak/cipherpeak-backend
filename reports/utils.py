@@ -6,6 +6,7 @@ from finance.models import Income, Expense
 from clientapp.models import ClientPayment
 from emplyees.models import SalaryPayment, LeaveManagement
 from task.models import Task
+from verification.models import ClientVerification
 
 def get_monthly_leave_data(month, year):
     """
@@ -78,51 +79,65 @@ def get_monthly_client_data(month, year):
     total_discount = 0
 
     for cp in payments:
-        # Get verified content counts for this month
-        verified_counts = ClientVerification.objects.filter(
-            client=cp.client,
-            completion_date__month=month,
-            completion_date__year=year
-        ).values('content_type').annotate(count=Count('id'))
-        
-        counts_dict = {item['content_type']: item['count'] for item in verified_counts}
+        try:
+            # Get verified content counts for this month
+            verified_counts = ClientVerification.objects.filter(
+                client=cp.client,
+                completion_date__month=month,
+                completion_date__year=year
+            ).values('content_type').annotate(count=Count('id'))
+            
+            counts_dict = {item['content_type']: item['count'] for item in verified_counts}
 
-        client_data.append({
-            'id': cp.client.id,
-            'client_name': cp.client.client_name,
-            'industry': cp.client.industry,
-            'location': cp.client.city,
-            'monthly_retainer': cp.client.monthly_retainer,
-            'payment_cycle': cp.client.get_payment_cycle_display(),
-            'tax_id': cp.client.tax_id,
-            'owner_name': cp.client.owner_name,
-            'contact_person': cp.client.contact_person_name,
-            'contact_email': cp.client.contact_email,
-            'contact_phone': cp.client.contact_phone,
-            'content_requirements': {
-                'videos': {'target': cp.client.videos_per_month, 'actual': counts_dict.get('video', 0)},
-                'posters': {'target': cp.client.posters_per_month, 'actual': counts_dict.get('poster', 0)},
-                'reels': {'target': cp.client.reels_per_month, 'actual': counts_dict.get('reel', 0)},
-                'stories': {'target': cp.client.stories_per_month, 'actual': counts_dict.get('story', 0)},
-            },
-            'amount': cp.amount,
-            'tax': cp.tax_amount,
-            'discount': cp.discount,
-            'net_amount': cp.net_amount,
-            'payment_date': cp.payment_date.strftime('%Y-%m-%d') if cp.payment_date else None,
-            'payment_method': cp.get_payment_method_display() if cp.payment_method else 'N/A',
-            'transaction_id': cp.transaction_id or 'N/A',
-            'status': cp.get_status_display(),
-            'remarks': cp.remarks
-        })
+            # Safely get payment method display
+            payment_method_display = 'N/A'
+            if hasattr(cp, 'payment_method') and cp.payment_method:
+                try:
+                    payment_method_display = cp.get_payment_method_display()
+                except:
+                    payment_method_display = str(cp.payment_method)
+
+            client_data.append({
+                'id': cp.client.id,
+                'client_name': getattr(cp.client, 'client_name', 'N/A'),
+                'industry': getattr(cp.client, 'industry', 'N/A'),
+                'location': getattr(cp.client, 'city', 'N/A'),
+                'monthly_retainer': getattr(cp.client, 'monthly_retainer', 0),
+                'payment_cycle': cp.client.get_payment_cycle_display() if hasattr(cp.client, 'get_payment_cycle_display') else 'N/A',
+                'tax_id': getattr(cp.client, 'tax_id', 'N/A') or 'N/A',
+                'owner_name': getattr(cp.client, 'owner_name', 'N/A') or 'N/A',
+                'contact_person': getattr(cp.client, 'contact_person_name', 'N/A') or 'N/A',
+                'contact_email': getattr(cp.client, 'contact_email', 'N/A') or 'N/A',
+                'contact_phone': getattr(cp.client, 'contact_phone', 'N/A') or 'N/A',
+                'content_requirements': {
+                    'videos': {'target': getattr(cp.client, 'videos_per_month', 0) or 0, 'actual': counts_dict.get('video', 0)},
+                    'posters': {'target': getattr(cp.client, 'posters_per_month', 0) or 0, 'actual': counts_dict.get('poster', 0)},
+                    'reels': {'target': getattr(cp.client, 'reels_per_month', 0) or 0, 'actual': counts_dict.get('reel', 0)},
+                    'stories': {'target': getattr(cp.client, 'stories_per_month', 0) or 0, 'actual': counts_dict.get('story', 0)},
+                },
+                'amount': cp.amount,
+                'tax': cp.tax_amount,
+                'discount': cp.discount,
+                'net_amount': cp.net_amount,
+                'payment_date': cp.payment_date.strftime('%Y-%m-%d') if cp.payment_date else None,
+                'payment_method': payment_method_display,
+                'transaction_id': getattr(cp, 'transaction_id', None) or 'N/A',
+                'status': cp.get_status_display() if hasattr(cp, 'get_status_display') else 'N/A',
+                'remarks': getattr(cp, 'remarks', '') or ''
+            })
+        except Exception as e:
+            # Log the error but continue processing other clients
+            print(f"Error processing client payment {cp.id}: {str(e)}")
+        
+        # Always accumulate totals, even if client_data.append failed
         total_revenue += cp.net_amount
         total_tax += cp.tax_amount
         total_discount += cp.discount
 
     # Fetch Tasks for these clients in this period
     tasks = Task.objects.filter(
-        due_date__month=month,
-        due_date__year=year,
+        created_at__month=month,
+        created_at__year=year,
         is_deleted=False
     ).select_related('client', 'assignee')
 
@@ -133,7 +148,7 @@ def get_monthly_client_data(month, year):
             'client': t.client.client_name if t.client else 'N/A',
             'assignee': t.assignee.get_full_name() or t.assignee.username,
             'status': t.get_status_display(),
-            'due_date': t.due_date.strftime('%Y-%m-%d')
+            'created_at': t.created_at.strftime('%Y-%m-%d')
         } for t in tasks],
         'summary': {
             'total_revenue': total_revenue,
@@ -179,34 +194,56 @@ def get_monthly_employee_data(month, year):
         # Calculate tasks for this SPECIFIC employee in this period
         emp_tasks = Task.objects.filter(
             assignee=emp,
-            due_date__month=month,
-            due_date__year=year,
+            created_at__month=month,
+            created_at__year=year,
             is_deleted=False
         )
         
         tasks_completed = emp_tasks.filter(status='completed').count()
         tasks_pending = emp_tasks.filter(status__in=['pending', 'in_progress', 'scheduled']).count()
 
-        employee_data.append({
-            'id': emp.id,
-            'employee_name': emp_name,
-            'department': emp.department if emp.department else 'N/A',
-            'designation': emp.designation if emp.designation else 'Staff',
-            'gender': emp.get_gender_display() if emp.gender else 'N/A',
-            'email': emp.email,
-            'phone': emp.phone_number if emp.phone_number else 'N/A',
-            'joining_date': emp.joining_date.strftime('%Y-%m-%d') if emp.joining_date else 'N/A',
-            'base_salary': sp.base_salary,
-            'incentives': sp.incentives,
-            'deductions': sp.deductions,
-            'net_paid': sp.net_amount,
-            'payment_date': sp.payment_date.strftime('%Y-%m-%d') if sp.payment_date else None,
-            'status': sp.get_status_display(),
-            'remarks': sp.remarks,
-            'leaves_count': employee_leaves.get(emp.id, 0),
-            'tasks_completed': tasks_completed,
-            'tasks_pending': tasks_pending
-        })
+        try:
+            # Safely get gender display
+            gender_display = 'N/A'
+            if hasattr(emp, 'gender') and emp.gender:
+                try:
+                    gender_display = emp.get_gender_display()
+                except:
+                    gender_display = str(emp.gender) if emp.gender else 'N/A'
+            
+            # Safely get joining date
+            joining_date_str = 'N/A'
+            if hasattr(emp, 'joining_date') and emp.joining_date:
+                try:
+                    joining_date_str = emp.joining_date.strftime('%Y-%m-%d')
+                except:
+                    joining_date_str = str(emp.joining_date)
+            
+            employee_data.append({
+                'id': emp.id,
+                'employee_name': emp_name,
+                'department': getattr(emp, 'department', None) or 'N/A',
+                'designation': getattr(emp, 'designation', None) or 'Staff',
+                'gender': gender_display,
+                'email': getattr(emp, 'email', 'N/A'),
+                'phone': getattr(emp, 'phone_number', None) or 'N/A',
+                'joining_date': joining_date_str,
+                'base_salary': sp.base_salary,
+                'incentives': sp.incentives,
+                'deductions': sp.deductions,
+                'net_paid': sp.net_amount,
+                'payment_date': sp.payment_date.strftime('%Y-%m-%d') if sp.payment_date else None,
+                'status': sp.get_status_display(),
+                'remarks': sp.remarks or '',
+                'leaves_count': employee_leaves.get(emp.id, 0),
+                'tasks_completed': tasks_completed,
+                'tasks_pending': tasks_pending
+            })
+        except Exception as e:
+            # Log the error but continue processing other employees
+            print(f"Error processing employee {emp.id}: {str(e)}")
+        
+        # Always accumulate totals, even if employee_data.append failed
         total_salary += sp.base_salary
         total_incentives += sp.incentives
         total_deductions += sp.deductions
@@ -214,8 +251,8 @@ def get_monthly_employee_data(month, year):
 
     # Fetch Tasks assigned to employees for this period
     tasks = Task.objects.filter(
-        due_date__month=month,
-        due_date__year=year,
+        created_at__month=month,
+        created_at__year=year,
         is_deleted=False
     ).select_related('assignee', 'client')
 
@@ -226,7 +263,7 @@ def get_monthly_employee_data(month, year):
             'assignee': t.assignee.get_full_name() or t.assignee.username,
             'client': t.client.client_name if t.client else 'N/A',
             'status': t.get_status_display(),
-            'due_date': t.due_date.strftime('%Y-%m-%d')
+            'created_at': t.created_at.strftime('%Y-%m-%d')
         } for t in tasks],
         'leaves': leave_report,
         'summary': {

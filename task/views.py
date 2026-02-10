@@ -84,23 +84,8 @@ class TaskListView(APIView):
         if client_id:
             queryset = queryset.filter(client_id=client_id)
 
-        overdue = request.query_params.get('overdue', None)
-        if overdue and overdue.lower() == 'true':
-            queryset = queryset.filter(
-                due_date__lt=timezone.now(), 
-                status__in=['pending', 'in_progress']
-            )
-
-        start_date = request.query_params.get('start_date', None)
-        if start_date:
-            queryset = queryset.filter(due_date__gte=start_date)
-            
-        end_date = request.query_params.get('end_date', None)
-        if end_date:
-            queryset = queryset.filter(due_date__lte=end_date)
-
         ordering = request.query_params.get('ordering', '-created_at')
-        valid_ordering_fields = ['created_at', '-created_at', 'due_date', '-due_date', 'priority', '-priority', 'status', '-status']
+        valid_ordering_fields = ['created_at', '-created_at', 'priority', '-priority', 'status', '-status']
         if ordering not in valid_ordering_fields:
             ordering = '-created_at'
         

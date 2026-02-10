@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment,LeaveBalance
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, LeaveBalance, Announcement
 from django.contrib.auth import authenticate
 
 
@@ -677,3 +677,18 @@ class LeaveBalanceSerializer(serializers.ModelSerializer):
             status='approved',
             created_at__year=obj.year
         ).count()
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Announcement
+        fields = [
+            'id', 'title', 'description', 'created_at', 
+            'created_by', 'created_by_name', 'is_active'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+
+    def get_created_by_name(self, obj):
+        name = obj.created_by.get_full_name()
+        return name if name.strip() else obj.created_by.username
