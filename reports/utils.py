@@ -64,75 +64,121 @@ def get_monthly_leave_data(month, year):
 def get_monthly_client_data(month, year):
     """
     Fetches and aggregates all client revenue data for a given month and year.
+    Iterates over ALL active clients, attaching payment info if available.
     """
     from verification.models import ClientVerification
+    from clientapp.models import Client, ClientPayment
     
-    payments = ClientPayment.objects.filter(
-        month=month,
-        year=year,
-        status__in=['paid', 'early_paid', 'partial']
-    ).select_related('client')
-
+    # Get all active clients
+    clients = Client.objects.filter(is_deleted=False).exclude(status='terminated')
+    
     client_data = []
     total_revenue = 0
     total_tax = 0
     total_discount = 0
+    
+    # Prefetch payments for this batch of clients for this month/year to avoid N+1
+    # We can do this efficiently by filtering payments
+    payments = ClientPayment.objects.filter(
+        month=month,
+        year=year,
+        status__in=['paid', 'early_paid', 'partial'],
+        client__in=clients
+    ).select_related('client')
+    
+    # Create valid payment map: client_id -> payment_obj
+    payment_map = {p.client.id: p for p in payments}
 
-    for cp in payments:
+    for client in clients:
         try:
             # Get verified content counts for this month
             verified_counts = ClientVerification.objects.filter(
-                client=cp.client,
-                completion_date__month=month,
-                completion_date__year=year
+                client=client,
+                posted_date__month=month,
+                posted_date__year=year
             ).values('content_type').annotate(count=Count('id'))
             
             counts_dict = {item['content_type']: item['count'] for item in verified_counts}
 
-            # Safely get payment method display
+            # Check if there is a payment
+            cp = payment_map.get(client.id)
+            
+            # Default values if no payment
+            amount = 0
+            tax_amount = 0
+            discount = 0
+            net_amount = 0
+            payment_date = None
             payment_method_display = 'N/A'
-            if hasattr(cp, 'payment_method') and cp.payment_method:
-                try:
-                    payment_method_display = cp.get_payment_method_display()
-                except:
-                    payment_method_display = str(cp.payment_method)
+            transaction_id = 'N/A'
+            status = 'Pending' # Or 'Unpaid'
+            remarks = ''
+
+            if cp:
+                amount = cp.amount
+                tax_amount = cp.tax_amount
+                discount = cp.discount
+                net_amount = cp.net_amount
+                payment_date = cp.payment_date.strftime('%Y-%m-%d') if cp.payment_date else None
+                
+                if hasattr(cp, 'payment_method') and cp.payment_method:
+                    try:
+                        payment_method_display = cp.get_payment_method_display()
+                    except:
+                        payment_method_display = str(cp.payment_method)
+                
+                transaction_id = getattr(cp, 'transaction_id', None) or 'N/A'
+                status = cp.get_status_display() if hasattr(cp, 'get_status_display') else 'N/A'
+                remarks = getattr(cp, 'remarks', '') or ''
+                
+                # Accumulate totals only if payment exists
+                total_revenue += net_amount
+                total_tax += tax_amount
+                total_discount += discount
+            else:
+                 # Check if the client has a payment record that is NOT paid (e.g. pending/overdue)
+                 # This is optional but gives better status visibility
+                 pending_cp = ClientPayment.objects.filter(
+                    client=client,
+                    month=month,
+                    year=year
+                 ).first()
+                 if pending_cp:
+                     status = pending_cp.get_status_display()
+            
 
             client_data.append({
-                'id': cp.client.id,
-                'client_name': getattr(cp.client, 'client_name', 'N/A'),
-                'industry': getattr(cp.client, 'industry', 'N/A'),
-                'location': getattr(cp.client, 'city', 'N/A'),
-                'monthly_retainer': getattr(cp.client, 'monthly_retainer', 0),
-                'payment_cycle': cp.client.get_payment_cycle_display() if hasattr(cp.client, 'get_payment_cycle_display') else 'N/A',
-                'tax_id': getattr(cp.client, 'tax_id', 'N/A') or 'N/A',
-                'owner_name': getattr(cp.client, 'owner_name', 'N/A') or 'N/A',
-                'contact_person': getattr(cp.client, 'contact_person_name', 'N/A') or 'N/A',
-                'contact_email': getattr(cp.client, 'contact_email', 'N/A') or 'N/A',
-                'contact_phone': getattr(cp.client, 'contact_phone', 'N/A') or 'N/A',
+                'id': client.id,
+                'client_name': getattr(client, 'client_name', 'N/A'),
+                'industry': getattr(client, 'industry', 'N/A'),
+                'location': getattr(client, 'city', 'N/A'),
+                'monthly_retainer': getattr(client, 'monthly_retainer', 0),
+                'payment_cycle': client.get_payment_cycle_display() if hasattr(client, 'get_payment_cycle_display') else 'N/A',
+                'tax_id': getattr(client, 'tax_id', 'N/A') or 'N/A',
+                'owner_name': getattr(client, 'owner_name', 'N/A') or 'N/A',
+                'contact_person': getattr(client, 'contact_person_name', 'N/A') or 'N/A',
+                'contact_email': getattr(client, 'contact_email', 'N/A') or 'N/A',
+                'contact_phone': getattr(client, 'contact_phone', 'N/A') or 'N/A',
                 'content_requirements': {
-                    'videos': {'target': getattr(cp.client, 'videos_per_month', 0) or 0, 'actual': counts_dict.get('video', 0)},
-                    'posters': {'target': getattr(cp.client, 'posters_per_month', 0) or 0, 'actual': counts_dict.get('poster', 0)},
-                    'reels': {'target': getattr(cp.client, 'reels_per_month', 0) or 0, 'actual': counts_dict.get('reel', 0)},
-                    'stories': {'target': getattr(cp.client, 'stories_per_month', 0) or 0, 'actual': counts_dict.get('story', 0)},
+                    'videos': {'target': getattr(client, 'videos_per_month', 0) or 0, 'actual': counts_dict.get('video', 0)},
+                    'posters': {'target': getattr(client, 'posters_per_month', 0) or 0, 'actual': counts_dict.get('poster', 0)},
+                    'reels': {'target': getattr(client, 'reels_per_month', 0) or 0, 'actual': counts_dict.get('reel', 0)},
+                    'stories': {'target': getattr(client, 'stories_per_month', 0) or 0, 'actual': counts_dict.get('story', 0)},
                 },
-                'amount': cp.amount,
-                'tax': cp.tax_amount,
-                'discount': cp.discount,
-                'net_amount': cp.net_amount,
-                'payment_date': cp.payment_date.strftime('%Y-%m-%d') if cp.payment_date else None,
+                'amount': amount,
+                'tax': tax_amount,
+                'discount': discount,
+                'net_amount': net_amount,
+                'payment_date': payment_date,
                 'payment_method': payment_method_display,
-                'transaction_id': getattr(cp, 'transaction_id', None) or 'N/A',
-                'status': cp.get_status_display() if hasattr(cp, 'get_status_display') else 'N/A',
-                'remarks': getattr(cp, 'remarks', '') or ''
+                'transaction_id': transaction_id,
+                'status': status,
+                'remarks': remarks
             })
         except Exception as e:
             # Log the error but continue processing other clients
-            print(f"Error processing client payment {cp.id}: {str(e)}")
+            print(f"Error processing client {client.id}: {str(e)}")
         
-        # Always accumulate totals, even if client_data.append failed
-        total_revenue += cp.net_amount
-        total_tax += cp.tax_amount
-        total_discount += cp.discount
 
     # Fetch Tasks for these clients in this period
     tasks = Task.objects.filter(
@@ -162,12 +208,23 @@ def get_monthly_client_data(month, year):
 def get_monthly_employee_data(month, year):
     """
     Fetches and aggregates all employee salary data for a given month and year.
+    Iterates over ALL active employees, attaching salary info if available.
     """
-    payments = SalaryPayment.objects.filter(
+    from emplyees.models import CustomUser
+    
+    # Fetch all active employees (excluding superusers if desired, or based on role)
+    # Assuming is_active=True is sufficient
+    employees = CustomUser.objects.filter(is_active=True).exclude(is_superuser=True)
+    
+    salary_payments = SalaryPayment.objects.filter(
         month=month,
         year=year,
-        status__in=['paid', 'early_paid']
-    ).select_related('employee')
+        status__in=['paid', 'early_paid'],
+        employee__in=employees
+    )
+    
+    # Map employee_id -> salary_payment
+    salary_map = {sp.employee.id: sp for sp in salary_payments}
 
     employee_data = []
     total_salary = 0
@@ -187,8 +244,7 @@ def get_monthly_employee_data(month, year):
         if l['status_code'] == 'approved':
             employee_leaves[emp_id] += l['total_days']
 
-    for sp in payments:
-        emp = sp.employee
+    for emp in employees:
         emp_name = emp.get_full_name() or emp.username
         
         # Calculate tasks for this SPECIFIC employee in this period
@@ -219,6 +275,32 @@ def get_monthly_employee_data(month, year):
                 except:
                     joining_date_str = str(emp.joining_date)
             
+            # Get Salary Info if available
+            sp = salary_map.get(emp.id)
+            
+            base_salary = 0
+            incentives = 0
+            deductions = 0
+            net_paid = 0
+            payment_date = None
+            status = 'Unpaid'
+            remarks = ''
+            
+            if sp:
+                base_salary = sp.base_salary
+                incentives = sp.incentives
+                deductions = sp.deductions
+                net_paid = sp.net_amount
+                payment_date = sp.payment_date.strftime('%Y-%m-%d') if sp.payment_date else None
+                status = sp.get_status_display()
+                remarks = sp.remarks or ''
+                
+                # Accumulate totals
+                total_salary += base_salary
+                total_incentives += incentives
+                total_deductions += deductions
+                total_net += net_paid
+            
             employee_data.append({
                 'id': emp.id,
                 'employee_name': emp_name,
@@ -228,13 +310,13 @@ def get_monthly_employee_data(month, year):
                 'email': getattr(emp, 'email', 'N/A'),
                 'phone': getattr(emp, 'phone_number', None) or 'N/A',
                 'joining_date': joining_date_str,
-                'base_salary': sp.base_salary,
-                'incentives': sp.incentives,
-                'deductions': sp.deductions,
-                'net_paid': sp.net_amount,
-                'payment_date': sp.payment_date.strftime('%Y-%m-%d') if sp.payment_date else None,
-                'status': sp.get_status_display(),
-                'remarks': sp.remarks or '',
+                'base_salary': base_salary,
+                'incentives': incentives,
+                'deductions': deductions,
+                'net_paid': net_paid,
+                'payment_date': payment_date,
+                'status': status,
+                'remarks': remarks,
                 'leaves_count': employee_leaves.get(emp.id, 0),
                 'tasks_completed': tasks_completed,
                 'tasks_pending': tasks_pending
@@ -242,12 +324,6 @@ def get_monthly_employee_data(month, year):
         except Exception as e:
             # Log the error but continue processing other employees
             print(f"Error processing employee {emp.id}: {str(e)}")
-        
-        # Always accumulate totals, even if employee_data.append failed
-        total_salary += sp.base_salary
-        total_incentives += sp.incentives
-        total_deductions += sp.deductions
-        total_net += sp.net_amount
 
     # Fetch Tasks assigned to employees for this period
     tasks = Task.objects.filter(
