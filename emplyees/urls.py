@@ -34,7 +34,7 @@ urlpatterns = [
     #delete employee
     path('employees/<int:employee_id>/delete/', views.EmployeeDeleteView.as_view(), name='delete_employee'),
     
- 
+    path('employees/<int:pk>/reset-password/', views.EmployeePasswordResetView.as_view(), name='employee-password-reset'),
     
 
     # JWT Token Refresh
@@ -60,6 +60,9 @@ urlpatterns = [
     # Announcements
     path('announcements/', views.AnnouncementViewSet.as_view(), name='announcement-list'),
     path('announcements/<int:pk>/', views.AnnouncementDetailView.as_view(), name='announcement-detail'),
+
+    
+
 ]
 
 

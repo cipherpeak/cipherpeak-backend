@@ -2,227 +2,388 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import permissions, status
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q
-from .models import ClientVerification
-from clientapp.models import Client
-from datetime import datetime, date
+from django.db.models import Count, Q, F
 from django.utils import timezone
-from django.db.models import Sum, Q
+from datetime import datetime, date
+import calendar
+
+from verification.models import ClientVerification  # Only ClientVerification from verification
+from clientapp.models import Client  # Client from clientapp
 from .serializers import (
-    VerificationDashboardSerializer,
-    MarkClientVerifiedSerializer,
-    UpdatePostedCountSerializer,
-    UpdateQuotaSerializer
+    DashboardSerializer,
+    PostedContentCreateSerializer,
+    ClientVerificationSerializer,
+    UpdateQuotaSerializer,
+    VerifyClientSerializer,
+    BulkUpdateVerificationSerializer
 )
+
 
 
 class VerificationDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
-        """
-        Returns a summary for ALL active clients for the current month, formatted for the dashboard.
-        """
+        """Get verification dashboard for all clients"""
         today = timezone.now().date()
         
-        # Get month/year from query params, default to current month/year
+        # Get month/year from query params
         try:
             current_month = int(request.query_params.get('month', today.month))
             current_year = int(request.query_params.get('year', today.year))
         except (ValueError, TypeError):
             current_month = today.month
             current_year = today.year
-            
-        # Target date for logic consistency
-        target_date = date(current_year, current_month, 1)
-        start_of_month = timezone.make_aware(datetime(current_year, current_month, 1))
         
         # Get all active clients
-        clients = Client.objects.filter(is_deleted=False).exclude(status='terminated')
+        clients = Client.objects.filter(
+            is_deleted=False
+        ).exclude(
+            status__in=['terminated', 'prospect']
+        ).order_by('client_name')
         
         dashboard_data = []
         
         for client in clients:
-            # Quotas (Total)
-            poster_quota = client.posters_per_month
-            video_quota = client.videos_per_month
-            
-            # Posted (Verified)
-            base_verified = ClientVerification.objects.filter(
+            # Get posted counts for the selected month
+            posters_posted = ClientVerification.objects.filter(
                 client=client,
-                verified_by__isnull=False,
-                completion_date__month=current_month,
-                completion_date__year=current_year
-            )
+                content_type='poster',
+                posted_date__month=current_month,
+                posted_date__year=current_year,
+                status__in=['posted', 'approved']
+            ).count()
             
-            posted_videos = base_verified.filter(content_type='video').count()
-            posted_posters = base_verified.filter(content_type='poster').count()
-            
-            # Pending (Unverified)
-            base_pending = ClientVerification.objects.filter(
+            videos_posted = ClientVerification.objects.filter(
                 client=client,
-                verified_by__isnull=True
-            )
+                content_type='video',
+                posted_date__month=current_month,
+                posted_date__year=current_year,
+                status__in=['posted', 'approved']
+            ).count()
             
-            pending_videos = base_pending.filter(content_type='video').count()
-            pending_posters = base_pending.filter(content_type='poster').count()
-            
-            # Roll-over flag
-            has_overdue = base_pending.filter(
-                Q(completion_date__lt=target_date) | 
-                Q(created_at__lt=start_of_month)
+            # Check for overdue items (from previous months)
+            has_overdue = ClientVerification.objects.filter(
+                client=client,
+                status__in=['draft', 'posted'],
+                posted_date__lt=date(current_year, current_month, 1)
             ).exists()
             
+            # Check if client is verified for the month
             is_verified = (
-                posted_posters >= poster_quota and 
-                posted_videos >= video_quota and 
-                pending_posters == 0 and
-                pending_videos == 0
+                posters_posted >= client.posters_per_month and 
+                videos_posted >= client.videos_per_month
             )
             
             dashboard_data.append({
                 'client_id': client.id,
                 'client_name': client.client_name,
-                'poster_quota': poster_quota,
-                'video_quota': video_quota,
-                'posted_posters': posted_posters,
-                'posted_videos': posted_videos,
-                'pending_videos': pending_videos,
-                'pending_posters': pending_posters,
-                'has_overdue': has_overdue,
+                'poster_quota': client.posters_per_month,
+                'video_quota': client.videos_per_month,
+                'posted_posters': posters_posted,
+                'posted_videos': videos_posted,
                 'is_verified': is_verified,
-                'industry': client.get_industry_display() if client.industry else 'N/A' 
+                'industry': client.get_industry_display() if client.industry else None,
+                'has_overdue': has_overdue
             })
-            
-        serializer = VerificationDashboardSerializer(dashboard_data, many=True)
+        
+        serializer = DashboardSerializer(dashboard_data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class MarkClientVerifiedView(APIView):
+
+class AddPostedContentView(APIView):
+    """Add a posted content record"""
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
-        serializer = MarkClientVerifiedSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = PostedContentCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            client = data['client']
+            content_type = data['content_type']
+            month = data['month']
+            year = data['year']
             
-        client_id = serializer.validated_data.get('client_id')
-        client = get_object_or_404(Client, id=client_id)
+            # Create posted date (first day of the month)
+            posted_date = date(year, month, 1)
+            
+            # Check if quota allows more posts
+            current_count = ClientVerification.objects.filter(
+                client=client,
+                content_type=content_type,
+                posted_date__month=month,
+                posted_date__year=year,
+                status__in=['posted', 'approved']
+            ).count()
+            
+            quota = client.posters_per_month if content_type == 'poster' else client.videos_per_month
+            
+            if current_count >= quota:
+                return Response({
+                    'error': f'Quota reached. Maximum {quota} {content_type}s allowed per month.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create the verification record
+            verification = ClientVerification.objects.create(
+                client=client,
+                content_type=content_type,
+                title=data.get('title', ''),
+                description=data.get('description', ''),
+                posted_date=posted_date,
+                platform=data.get('platform'),
+                content_url=data.get('content_url', ''),
+                status='posted',
+                created_by=request.user
+            )
+            
+            # Get updated counts
+            stats = client.get_posted_stats(month=month, year=year)
+            
+            return Response({
+                'success': True,
+                'message': f'{content_type.capitalize()} posted successfully',
+                'verification_id': verification.id,
+                'posted_posters': stats['posters_posted'],
+                'posted_videos': stats['videos_posted'],
+                'is_verified': stats['is_verified']
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RemovePostedContentView(APIView):
+    """Remove the most recent posted content"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        serializer = PostedContentCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            client = data['client']
+            content_type = data['content_type']
+            month = data['month']
+            year = data['year']
+            
+            # Find the most recent posted item for this client and month
+            recent_item = ClientVerification.objects.filter(
+                client=client,
+                content_type=content_type,
+                posted_date__month=month,
+                posted_date__year=year,
+                status__in=['posted', 'approved']
+            ).order_by('-created_at').first()
+            
+            if recent_item:
+                recent_item.delete()
+                message = f'Removed {content_type} posted on {recent_item.created_at.strftime("%Y-%m-%d")}'
+            else:
+                message = f'No {content_type} found to remove'
+            
+            # Get updated stats
+            stats = client.get_posted_stats(month=month, year=year)
+            
+            return Response({
+                'success': True,
+                'message': message,
+                'posted_posters': stats['posters_posted'],
+                'posted_videos': stats['videos_posted'],
+                'is_verified': stats['is_verified']
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class VerifyClientMonthView(APIView):
+    """Mark client as verified for the month"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        serializer = VerifyClientSerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            client_id = data['client_id']
+            month = data.get('month')
+            year = data.get('year')
+            
+            client = get_object_or_404(Client, id=client_id, is_deleted=False)
+            
+            today = timezone.now().date()
+            month = month or today.month
+            year = year or today.year
+            
+            # Check if client meets quotas
+            stats = client.get_posted_stats(month=month, year=year)
+            
+            if not stats['is_verified']:
+                return Response({
+                    'error': 'Client does not meet quotas',
+                    'details': {
+                        'posters_needed': stats['posters_quota'] - stats['posters_posted'],
+                        'videos_needed': stats['videos_quota'] - stats['videos_posted']
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Mark all posted items as approved
+            posted_items = ClientVerification.objects.filter(
+                client=client,
+                posted_date__month=month,
+                posted_date__year=year,
+                status='posted'
+            )
+            
+            updated_count = posted_items.count()
+            
+            for item in posted_items:
+                item.approve(user=request.user)
+            
+            return Response({
+                'success': True,
+                'message': f'Client verified for {month}/{year}',
+                'verified_items': updated_count,
+                'is_verified': True
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetClientPostedDetailsView(APIView):
+    """Get all posted content for a specific client and month"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, client_id):
+        month = request.query_params.get('month')
+        year = request.query_params.get('year')
         
         today = timezone.now().date()
-        current_month = serializer.validated_data.get('month', today.month)
-        current_year = serializer.validated_data.get('year', today.year)
-        target_date = date(int(current_year), int(current_month), 1)
+        month = int(month) if month else today.month
+        year = int(year) if year else today.year
         
-        pending_verifications = ClientVerification.objects.filter(
+        client = get_object_or_404(Client, id=client_id, is_deleted=False)
+        
+        # Get all posted content for this month
+        posted_content = ClientVerification.objects.filter(
             client=client,
-            verified_by__isnull=True
-        )
+            posted_date__month=month,
+            posted_date__year=year
+        ).order_by('content_type', '-posted_date', '-created_at')
         
-        count = pending_verifications.count()
+        # Get statistics
+        stats = client.get_posted_stats(month=month, year=year)
         
-        if count > 0:
-            pending_verifications.update(
-                verified_by=request.user,
-                completion_date=target_date,
-                updated_at=timezone.now()
-            )
-        else:
-            ClientVerification.objects.create(
-                client=client,
-                content_type='poster', 
-                verified_by=request.user,
-                completion_date=target_date,
-                description=f"Monthly verification sign-off for {target_date.strftime('%B %Y')}",
-                updated_at=timezone.now()
-            )
+        serializer = ClientVerificationSerializer(posted_content, many=True)
         
         return Response({
-            'message': f'Successfully verified {client.client_name}',
-            'count': count
+            'client_id': client_id,
+            'client_name': client.client_name,
+            'month': month,
+            'year': year,
+            'statistics': stats,
+            'posted_content': serializer.data,
+            'total_count': posted_content.count()
         }, status=status.HTTP_200_OK)
 
 
-class UpdatePostedCountView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def post(self, request):
-        serializer = UpdatePostedCountSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        client_id = serializer.validated_data.get('client_id')
-        content_type = serializer.validated_data.get('content_type')
-        new_count = serializer.validated_data.get('count')
-            
-        client = get_object_or_404(Client, id=client_id)
-        
-        type_map = {'posters': 'poster', 'videos': 'video'}
-        db_type = type_map.get(content_type)
-        
-        today = timezone.now().date()
-        current_month = serializer.validated_data.get('month', today.month)
-        current_year = serializer.validated_data.get('year', today.year)
-        target_date = date(int(current_year), int(current_month), 1)
-        
-        existing_items = ClientVerification.objects.filter(
-            client=client,
-            content_type=db_type,
-            completion_date__month=current_month,
-            completion_date__year=current_year
-        )
-        
-        current_count = existing_items.count()
-        
-        if int(new_count) > current_count:
-            to_create = int(new_count) - current_count
-            placeholders = []
-            for _ in range(to_create):
-                placeholders.append(ClientVerification(
-                    client=client,
-                    content_type=db_type,
-                    verified_by=None,
-                    completion_date=target_date,
-                    description=f"Auto-generated for {content_type} count update",
-                    updated_at=timezone.now()
-                ))
-            ClientVerification.objects.bulk_create(placeholders)
-            message = f"Added {to_create} pending {db_type} items"
-        elif int(new_count) < current_count:
-            to_remove = current_count - int(new_count)
-            unverified_to_remove = existing_items.filter(verified_by__isnull=True).order_by('-id')[:to_remove]
-            remaining = to_remove - unverified_to_remove.count()
-            ids_to_remove = list(unverified_to_remove.values_list('id', flat=True))
-            
-            if remaining > 0:
-                verified_to_remove = existing_items.filter(verified_by__isnull=False).order_by('-id')[:remaining]
-                ids_to_remove.extend(list(verified_to_remove.values_list('id', flat=True)))
-                
-            ClientVerification.objects.filter(id__in=ids_to_remove).delete()
-            message = f"Removed {to_remove} {db_type} items"
-        else:
-            message = "No changes needed"
-            
-        return Response({'message': message, 'count': new_count}, status=status.HTTP_200_OK)
-
-
 class UpdateQuotaView(APIView):
+    """Update client quotas"""
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
         serializer = UpdateQuotaSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            client_id = data['client_id']
+            content_type = data['content_type']
+            quota = data['quota']
             
-        client_id = serializer.validated_data.get('client_id')
-        content_type = serializer.validated_data.get('content_type')
-        new_quota = serializer.validated_data.get('quota')
+            client = get_object_or_404(Client, id=client_id, is_deleted=False)
             
+            if content_type == 'posters':
+                client.posters_per_month = quota
+            elif content_type == 'videos':
+                client.videos_per_month = quota
+            
+            client.save()
+            
+            return Response({
+                'success': True,
+                'message': f'{content_type.capitalize()} quota updated to {quota}',
+                'quota': quota
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BulkUpdateVerificationStatusView(APIView):
+    """Bulk update verification status for a client's monthly content"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        serializer = BulkUpdateVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            client_id = data['client_id']
+            month = data.get('month')
+            year = data.get('year')
+            status = data['status']
+            notes = data.get('notes', '')
+            
+            client = get_object_or_404(Client, id=client_id, is_deleted=False)
+            
+            today = timezone.now().date()
+            month = month or today.month
+            year = year or today.year
+            
+            # Get items to update
+            items_to_update = ClientVerification.objects.filter(
+                client=client,
+                posted_date__month=month,
+                posted_date__year=year,
+                status='posted'  # Only update items that are posted
+            )
+            
+            updated_count = items_to_update.count()
+            
+            # Update items
+            for item in items_to_update:
+                if status == 'approved':
+                    item.approve(user=request.user, notes=notes)
+                else:
+                    item.status = status
+                    item.verification_notes = notes
+                    item.save()
+            
+            return Response({
+                'success': True,
+                'message': f'Updated {updated_count} items to {status}',
+                'updated_count': updated_count
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DeletePostedContentView(APIView):
+    """Delete a specific posted content item"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def delete(self, request, verification_id):
+        verification = get_object_or_404(ClientVerification, id=verification_id)
+        
+        # Store info before deletion
+        client_id = verification.client.id
+        content_type = verification.content_type
+        month = verification.posted_date.month
+        year = verification.posted_date.year
+        
+        verification.delete()
+        
+        # Get updated stats
         client = get_object_or_404(Client, id=client_id)
+        stats = client.get_posted_stats(month=month, year=year)
         
-        if content_type == 'quota_posters' or content_type == 'posters':
-            client.posters_per_month = int(new_quota)
-        elif content_type == 'quota_videos' or content_type == 'videos':
-            client.videos_per_month = int(new_quota)
-        
-        client.save()
-        return Response({'message': 'Quota updated successfully', 'quota': new_quota}, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'message': f'Deleted {content_type} posted on {verification.posted_date}',
+            'posted_posters': stats['posters_posted'],
+            'posted_videos': stats['videos_posted'],
+            'is_verified': stats['is_verified']
+        }, status=status.HTTP_200_OK)

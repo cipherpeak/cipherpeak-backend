@@ -3,19 +3,8 @@ from django.contrib import admin
 # Register your models here.
 # admin.py
 from django.contrib import admin
-from .models import IncomeCategory, ExpenseCategory, Income, Expense, FinancialSummary
+from .models import  Income, Expense, FinancialSummary
 
-@admin.register(IncomeCategory)
-class IncomeCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'is_active']
-    list_filter = ['is_active']
-    search_fields = ['name']
-
-@admin.register(ExpenseCategory)
-class ExpenseCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'is_active']
-    list_filter = ['is_active']
-    search_fields = ['name']
 
 @admin.register(Income)
 class IncomeAdmin(admin.ModelAdmin):

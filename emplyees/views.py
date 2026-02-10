@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from datetime import date
 from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, Announcement
 from rest_framework.views import APIView
@@ -1046,3 +1047,44 @@ class AnnouncementDetailView(APIView):
         announcement.save()
         return Response({'message': 'Announcement deleted successfully'})
 
+
+class EmployeePasswordResetView(APIView):
+    permission_classes =[IsAuthenticated]  
+    def post(self, request, pk):
+        if not request.user.is_superuser and request.user.role not in ['admin', 'director', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to reset passwords'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        try:
+            # Get the user (employee) by ID
+            user = get_object_or_404(CustomUser, pk=pk)
+            
+            # Get the new password from the request body
+            new_password = request.data.get('password')
+            
+            if not new_password:
+                return Response(
+                    {'error': 'Password is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if len(new_password) < 5:
+                return Response(
+                    {'error': 'Password must be at least 5 characters long'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Set the new password
+            user.set_password(new_password)
+            user.save()
+            
+            return Response(
+                {'message': 'Password updated successfully'}, 
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

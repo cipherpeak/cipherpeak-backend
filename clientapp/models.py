@@ -3,6 +3,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import date, timedelta
 import calendar
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 
 
@@ -44,7 +46,6 @@ class Client(models.Model):
         ('custom', 'Custom'),
     ]
 
-
     PAYMENT_STATUS_CHOICES = [
         ('paid', 'Paid'),
         ('pending', 'Pending'),
@@ -52,7 +53,6 @@ class Client(models.Model):
         ('partial', 'Partial Payment'),
         ('early_paid', 'Early Paid'), 
     ]
-
 
     PAYMENT_TIMING_CHOICES = [
         ('on_time', 'On Time'),
@@ -167,15 +167,55 @@ class Client(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    
+    # Track who created/updated
+    created_by = models.ForeignKey(
+        'emplyees.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_clients'
+    )
 
     class Meta:
         ordering = ['client_name']
         verbose_name = 'Client'
         verbose_name_plural = 'Clients'
     
-    
     def __str__(self):
         return f"{self.client_name} ({self.get_client_type_display()})"
+    
+    def get_posted_stats(self, month=None, year=None):
+        """Get posted statistics for a specific month"""
+        from datetime import date
+        today = timezone.now().date()
+        month = month or today.month
+        year = year or today.year
+        
+        posters_posted = ClientVerification.objects.filter(
+            client=self,
+            content_type='poster',
+            posted_date__month=month,
+            posted_date__year=year,
+            status__in=['posted', 'approved']
+        ).count()
+        
+        videos_posted = ClientVerification.objects.filter(
+            client=self,
+            content_type='video',
+            posted_date__month=month,
+            posted_date__year=year,
+            status__in=['posted', 'approved']
+        ).count()
+        
+        return {
+            'posters_posted': posters_posted,
+            'videos_posted': videos_posted,
+            'posters_quota': self.posters_per_month,
+            'videos_quota': self.videos_per_month,
+            'is_verified': posters_posted >= self.posters_per_month and videos_posted >= self.videos_per_month
+        }
+
 
 
 
