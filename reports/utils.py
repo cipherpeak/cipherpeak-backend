@@ -278,7 +278,10 @@ def get_monthly_employee_data(month, year):
             # Get Salary Info if available
             sp = salary_map.get(emp.id)
             
-            base_salary = 0
+            # Use employee's profile salary as default, fallback to 0
+            default_base_salary = emp.salary if emp.salary else 0
+            
+            base_salary = default_base_salary
             incentives = 0
             deductions = 0
             net_paid = 0
@@ -287,7 +290,8 @@ def get_monthly_employee_data(month, year):
             remarks = ''
             
             if sp:
-                base_salary = sp.base_salary
+                # If salary payment exists, use its values
+                base_salary = sp.base_salary if sp.base_salary else default_base_salary
                 incentives = sp.incentives
                 deductions = sp.deductions
                 net_paid = sp.net_amount
