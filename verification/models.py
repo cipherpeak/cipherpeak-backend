@@ -53,7 +53,7 @@ class ClientVerification(models.Model):
         related_name='verified_content'
     )
     verified_date = models.DateTimeField(null=True, blank=True)
-    verification_notes = models.TextField(blank=True, null=True)
+    # verification_notes = models.TextField(blank=True, null=True)
     
     # Metadata
     created_by = models.ForeignKey(
