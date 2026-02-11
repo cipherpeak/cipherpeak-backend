@@ -43,8 +43,6 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             'status', 
             'priority',
             'task_type', 
-            'due_date', 
-            'scheduled_date',
             'created_at',
             'updated_at'
         ]
@@ -64,8 +62,6 @@ class TaskUpdateSerializer(serializers.ModelSerializer):
             'status',
             'priority',
             'task_type',
-            'due_date',
-            'scheduled_date'
         ]
         read_only_fields = ['id']
 
@@ -95,8 +91,6 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'priority_display',
             'task_type',
             'task_type_display',
-            'due_date', 
-            'scheduled_date',
             'completed_at', 
             'created_by', 
             'created_by_details', 
@@ -114,7 +108,6 @@ class TaskListSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    is_overdue = serializers.SerializerMethodField()
     
     class Meta:
         model = Task
@@ -131,12 +124,9 @@ class TaskListSerializer(serializers.ModelSerializer):
             'priority',
             'priority_display',
             'task_type',
-            'due_date',
-            'scheduled_date',
             'assignee_name',
             'assignee_designation',
             'client_name',
-            'is_overdue',
             'created_at'
         ]
     
@@ -145,9 +135,3 @@ class TaskListSerializer(serializers.ModelSerializer):
             name = f"{obj.assignee.first_name} {obj.assignee.last_name}".strip()
             return name if name else obj.assignee.username
         return "Unassigned"
-    
-    def get_is_overdue(self, obj):
-        from django.utils import timezone
-        return obj.due_date < timezone.now() and obj.status != 'completed'
-
-

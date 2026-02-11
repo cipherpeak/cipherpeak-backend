@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment,LeaveBalance
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, LeaveBalance, Announcement
 from django.contrib.auth import authenticate
 
 
@@ -277,14 +277,15 @@ class EmployeeMediaCreateSerializer(serializers.ModelSerializer):
 #Leave list serializer
 class LeaveListSerializer(serializers.ModelSerializer):
     employee_name = serializers.SerializerMethodField()
-    employee_id = serializers.IntegerField(source='employee.id', read_only=True)
+    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     approved_by_name = serializers.SerializerMethodField()
+    applied_date = serializers.DateTimeField(source='created_at', read_only=True)
 
     class Meta:
         model = LeaveManagement
         fields = [
             'id', 'employee_name', 'employee_id', 'category', 'start_date', 'end_date',
-            'total_days', 'reason', 'status', 'created_at',
+            'total_days', 'reason', 'status', 'created_at', 'applied_date',
             'approved_by_name', 'approved_at', 'remarks', 'attachment'
         ]
 
@@ -478,11 +479,11 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 # camera department list serializer
 class CameraDepartmentListSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.client_name', read_only=True)
-    employee_name = serializers.SerializerMethodField()
+   
     class Meta:
         model = CameraDepartment
         fields = [
-            'id', 'client', 'client_name', 'uploaded_date', 'priority','link','employee_name'
+            'id', 'client', 'client_name', 'uploaded_date', 'priority','link','file_path'
         ]
 
     def get_employee_name(self, obj):
@@ -499,7 +500,7 @@ class CameraDepartmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CameraDepartment
         fields = [
-            'client', 'client_name', 'uploaded_date', 'priority', 'link'
+            'client', 'client_name', 'uploaded_date', 'priority', 'link','file_path'
         ]
         
 
@@ -511,7 +512,7 @@ class CameraDepartmentDetailSerializer(serializers.ModelSerializer):
         model = CameraDepartment
         fields = [
             'id', 'client', 'client_name',  
-            'uploaded_date', 'priority', 'link','employee_name'
+            'uploaded_date', 'priority', 'link','file_path'
         ]
 
     def get_employee_name(self, obj):
@@ -532,7 +533,7 @@ class LeaveCreateSerializer(serializers.ModelSerializer):
             'end_date',
             'total_days',
             'reason',
-           
+            'address_during_leave',
             'attachment',
         ]
 
@@ -572,7 +573,7 @@ class LeaveUpdateSerializer(serializers.ModelSerializer):
             'end_date', 
             'total_days', 
             'reason', 
-            
+            'address_during_leave',
             'attachment',
             'status', 
             'remarks',
@@ -676,3 +677,18 @@ class LeaveBalanceSerializer(serializers.ModelSerializer):
             status='approved',
             created_at__year=obj.year
         ).count()
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Announcement
+        fields = [
+            'id', 'title', 'description', 'created_at', 
+            'created_by', 'created_by_name', 'is_active'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+
+    def get_created_by_name(self, obj):
+        name = obj.created_by.get_full_name()
+        return name if name.strip() else obj.created_by.username

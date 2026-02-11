@@ -34,8 +34,6 @@ class Task(models.Model):
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     task_type = models.CharField(max_length=20, choices=TASK_TYPES)
     client = models.ForeignKey('clientapp.Client', on_delete=models.CASCADE, related_name='tasks',blank=True,null=True) 
-    due_date = models.DateTimeField()
-    scheduled_date = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
     
     created_by = models.ForeignKey('emplyees.CustomUser', on_delete=models.CASCADE, related_name='created_tasks')

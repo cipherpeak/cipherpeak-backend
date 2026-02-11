@@ -7,8 +7,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.db.models import Prefetch
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from datetime import date
-from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment
+from .models import CustomUser, EmployeeDocument, EmployeeMedia, LeaveManagement, SalaryPayment, CameraDepartment, Announcement
 from rest_framework.views import APIView
 from .serializers import (
     EmployeeCreateSerializer,
@@ -30,7 +31,8 @@ from .serializers import (
     LeaveUpdateSerializer,
     SalaryPaymentSerializer,
     PaymentDetailSerializer,
-    LeaveApprovalRejectSerializer
+    LeaveApprovalRejectSerializer,
+    AnnouncementSerializer
 )
 
 # login view 
@@ -42,9 +44,17 @@ class LoginView(APIView):
             refresh = RefreshToken.for_user(user)
             return Response({
                 'user': user.role,
+                'user_info': {
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'username': user.username,
+                    'id': user.id,
+                    'user_type': user.user_type, 
+                },
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-            })
+            }) 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -477,8 +487,11 @@ class SalaryPaymentListView(APIView):
         employee_id = request.query_params.get('employee_id')
         
         if employee_id:
-            # Check permissions
-            if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+            # Check permissions: allow if searching for self OR if user has administrative role
+            is_self = str(employee_id) == str(request.user.id)
+            is_admin = request.user.is_superuser or request.user.role in ['admin', 'hr', 'manager', 'director']
+            
+            if not (is_self or is_admin):
                 return Response(
                     {'error': 'You do not have permission to view other employees salary history'},
                     status=status.HTTP_403_FORBIDDEN
@@ -594,6 +607,23 @@ class ProcessSalaryPaymentView(APIView):
             }
         )
         
+        # Record in Finance
+        try:
+            from finance.utils import record_system_expense
+            record_system_expense(
+                expense_type='employee_salaries',
+                amount=net_amount,
+                date=today,
+                category_name='Employee Salaries',
+                vendor_name=employee.get_full_name() or employee.username,
+                remarks=f"Salary Payment for {employee.get_full_name() or employee.username} - {calendar.month_name[target_month]} {target_year}. {remarks}",
+                reference_number=f"SAL-{salary_payment.id}",
+                payment_method=payment_method,
+                created_by=request.user
+            )
+        except Exception as e:
+            print(f"Error recording finance expense: {str(e)}")
+
         return Response({
             'message': f'Salary payment for {target_month}/{target_year} processed successfully',
             'payroll_id': salary_payment.id,
@@ -639,7 +669,18 @@ class CameraDepartmentListView(APIView):
             projects = projects.filter(client_id=client_id)
             
         serializer = CameraDepartmentListSerializer(projects, many=True)
-        return Response(serializer.data)
+        
+        # Check if user can create projects
+        can_create = (
+            request.user.is_superuser or 
+            request.user.role in ['admin'] or 
+            request.user.user_type in ['camera_department', 'content_creator', 'manager', 'hr', 'editor']
+        )
+        
+        return Response({
+            'projects': serializer.data,
+            'can_create': can_create
+        })
 
 
 #camera department create view
@@ -649,7 +690,7 @@ class CameraDepartmentCreateView(APIView):
     def post(self, request):
         
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
-            'camera_department', 'content_creator', 'manager', 'hr'
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
         ]:
             return Response(
                 {'error': 'You do not have permission to create camera department projects'},
@@ -687,7 +728,7 @@ class CameraDepartmentDetailView(APIView):
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         
         if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
-            'camera_department', 'content_creator', 'manager', 'hr'
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
         ]:
             return Response(
                 {'error': 'You do not have permission to update camera department projects'},
@@ -699,7 +740,20 @@ class CameraDepartmentDetailView(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    def delete(self, request, pk):
+        project = self.get_object(pk)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not request.user.is_superuser and request.user.role not in ['admin'] and request.user.user_type not in [
+            'camera_department', 'content_creator', 'manager', 'hr', 'editor'
+        ]:
+            return Response(
+                {'error': 'You do not have permission to delete camera department projects'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        project.delete()
+        return Response({'message': 'Project deleted successfully'})
 
 #Leave create view 
 class LeaveCreateView(APIView):
@@ -729,7 +783,7 @@ class LeaveListView(APIView):
         user = request.user
         status_filter = request.query_params.get('status')
 
-        if user.role in ['manager', 'hr', 'admin', 'director']:
+        if user.is_superuser or user.role in ['manager', 'hr', 'admin', 'director']:
             leaves = LeaveManagement.objects.select_related(
                 'employee', 'approved_by'
             )
@@ -921,3 +975,116 @@ class LeaveBalanceView(APIView):
         serializer = LeaveBalanceSerializer(balance)
         return Response(serializer.data)
 
+
+# Announcement ViewSet
+class AnnouncementViewSet(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        announcements = Announcement.objects.filter(is_active=True).select_related('created_by')
+        serializer = AnnouncementSerializer(announcements, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    def post(self, request):
+        # Only admins/directors can post announcements
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can post announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = AnnouncementSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AnnouncementDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return Announcement.objects.get(pk=pk)
+        except Announcement.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AnnouncementSerializer(announcement, context={'request': request})
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can update announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = AnnouncementSerializer(announcement, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        announcement = self.get_object(pk)
+        if not announcement:
+            return Response({'error': 'Announcement not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.user.role not in ['admin', 'director', 'managing_director'] and not request.user.is_superuser:
+            return Response(
+                {'error': 'Only admins can delete announcements'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        announcement.is_active = False # Soft delete
+        announcement.save()
+        return Response({'message': 'Announcement deleted successfully'})
+
+
+class EmployeePasswordResetView(APIView):
+    permission_classes =[IsAuthenticated]  
+    def post(self, request, pk):
+        if not request.user.is_superuser and request.user.role not in ['admin', 'director', 'manager']:
+            return Response(
+                {'error': 'You do not have permission to reset passwords'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        try:
+            # Get the user (employee) by ID
+            user = get_object_or_404(CustomUser, pk=pk)
+            
+            # Get the new password from the request body
+            new_password = request.data.get('password')
+            
+            if not new_password:
+                return Response(
+                    {'error': 'Password is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if len(new_password) < 5:
+                return Response(
+                    {'error': 'Password must be at least 5 characters long'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Set the new password
+            user.set_password(new_password)
+            user.save()
+            
+            return Response(
+                {'message': 'Password updated successfully'}, 
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

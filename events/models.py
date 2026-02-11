@@ -126,12 +126,6 @@ class Event(models.Model):
             models.Index(fields=['assigned_employee']),
             models.Index(fields=['status']),
         ]
-        constraints = [
-            models.CheckConstraint(
-                check=models.Q(event_date__gte=timezone.now()),
-                name='event_date_future'
-            )
-        ]
     
     def __str__(self):
         return f"{self.name} - {self.get_event_type_display()} - {self.event_date.strftime('%Y-%m-%d %H:%M')}"

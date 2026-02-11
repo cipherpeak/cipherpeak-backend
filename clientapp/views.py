@@ -344,6 +344,23 @@ class ProcessClientPaymentView(APIView):
         
         client.save(update_fields=['current_month_payment_status', 'last_payment_date', 'next_payment_date'])
 
+        # Record in Finance
+        try:
+            from finance.utils import record_system_income
+            record_system_income(
+                income_type='client_payment',
+                amount=net_amount,
+                date=today,
+                category_name='Client Payments',
+                client_name=client.client_name,
+                remarks=f"Payment for {target_month}/{target_year}. {remarks}",
+                reference_number=transaction_id or f"CP-{client_payment.id}", # Fallback if no transaction_id
+                payment_method=payment_method,
+                created_by=request.user
+            )
+        except Exception as e:
+            print(f"Error recording finance income: {str(e)}")
+
         return Response({
             'message': f'Payment for {target_month}/{target_year} processed successfully',
             'payment_id': client_payment.id,

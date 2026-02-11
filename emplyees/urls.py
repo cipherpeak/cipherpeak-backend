@@ -11,14 +11,15 @@ urlpatterns = [
     #employee listing
     path('employees/', views.EmployeeListView.as_view(), name='employee_list'),
        
-   #employee detail url
-    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
-
     #Employee Creation
     path('employees/create/', views.EmployeeCreateView.as_view(), name='create_employee'),
-    
+
+    #employee detail url
+    path('employees/<str:employee_id>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+
     # update employee details
     path('employees/<int:employee_id>/update/', views.EmployeeUpdateView.as_view(), name='update_employee'),
+
     
     #Employee document_upload_url
     path('employees/upload_document/<int:employee_id>/', views.EmployeeDocumentCreateView.as_view(), name='upload_document'),
@@ -33,7 +34,7 @@ urlpatterns = [
     #delete employee
     path('employees/<int:employee_id>/delete/', views.EmployeeDeleteView.as_view(), name='delete_employee'),
     
- 
+    path('employees/<int:pk>/reset-password/', views.EmployeePasswordResetView.as_view(), name='employee-password-reset'),
     
 
     # JWT Token Refresh
@@ -55,8 +56,13 @@ urlpatterns = [
     path('salary-payment-history/', views.SalaryPaymentListView.as_view(), name='salary-payment-history'),
     path('process-salary-payment/<int:pk>/', views.ProcessSalaryPaymentView.as_view(), name='process-salary-payment'),
     path('payments/<int:id>/', views.PaymentDetailView.as_view(), name='payment-detail'),
+
+    # Announcements
+    path('announcements/', views.AnnouncementViewSet.as_view(), name='announcement-list'),
+    path('announcements/<int:pk>/', views.AnnouncementDetailView.as_view(), name='announcement-detail'),
+
     
-   
+
 ]
 
 

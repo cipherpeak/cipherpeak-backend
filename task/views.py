@@ -84,23 +84,8 @@ class TaskListView(APIView):
         if client_id:
             queryset = queryset.filter(client_id=client_id)
 
-        overdue = request.query_params.get('overdue', None)
-        if overdue and overdue.lower() == 'true':
-            queryset = queryset.filter(
-                due_date__lt=timezone.now(), 
-                status__in=['pending', 'in_progress']
-            )
-
-        start_date = request.query_params.get('start_date', None)
-        if start_date:
-            queryset = queryset.filter(due_date__gte=start_date)
-            
-        end_date = request.query_params.get('end_date', None)
-        if end_date:
-            queryset = queryset.filter(due_date__lte=end_date)
-
         ordering = request.query_params.get('ordering', '-created_at')
-        valid_ordering_fields = ['created_at', '-created_at', 'due_date', '-due_date', 'priority', '-priority', 'status', '-status']
+        valid_ordering_fields = ['created_at', '-created_at', 'priority', '-priority', 'status', '-status']
         if ordering not in valid_ordering_fields:
             ordering = '-created_at'
         
@@ -254,3 +239,44 @@ class TaskDeleteView(APIView):
 
 
 
+#task status update view
+class TaskStatusUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id):
+        try:
+            task = Task.objects.get(id=id)
+        except Task.DoesNotExist:
+            return Response(
+                {"error": "Task not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Permission check
+        user = request.user
+        if not user.is_superuser and user.role not in ['admin', 'director', 'managing_director']:
+            if task.assignee != user:
+                return Response(
+                    {"error": "Permission denied"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        new_status = request.data.get('status')
+        if not new_status:
+            return Response(
+                {"error": "Status is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update status
+        task.status = new_status
+        task.save()
+        
+        return Response(
+            {
+                "message": "Task status updated successfully",
+                "status": task.status,
+                "status_display": task.get_status_display()
+            },
+            status=status.HTTP_200_OK
+        )
