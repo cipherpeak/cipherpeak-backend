@@ -79,7 +79,7 @@ class Client(models.Model):
     linkedin_url = models.URLField(blank=True, null=True, verbose_name="LinkedIn URL")
     twitter_handle = models.CharField(max_length=255, blank=True, null=True, verbose_name="Twitter Handle")
     
-    # Monthly Content Requirements
+    # Monthly Content Requirements (Active/Current)
     videos_per_month = models.PositiveIntegerField(
         default=0,
         validators=[MinValueValidator(0)],
@@ -89,6 +89,18 @@ class Client(models.Model):
         default=0,
         validators=[MinValueValidator(0)],
         verbose_name="Number of Posters per Month"
+    )
+    
+    # Base Quotas (Immutable reference from creation)
+    base_videos_per_month = models.PositiveIntegerField(
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name="Base Videos per Month"
+    )
+    base_posters_per_month = models.PositiveIntegerField(
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name="Base Posters per Month"
     )
     reels_per_month = models.PositiveIntegerField(
         default=0,
@@ -185,9 +197,19 @@ class Client(models.Model):
     def __str__(self):
         return f"{self.client_name} ({self.get_client_type_display()})"
     
+    def save(self, *args, **kwargs):
+        # Initialize base quotas if they are not set
+        # This catches new clients and existing clients missing baseline data
+        if self.base_posters_per_month == 0 and self.posters_per_month > 0:
+            self.base_posters_per_month = self.posters_per_month
+        if self.base_videos_per_month == 0 and self.videos_per_month > 0:
+            self.base_videos_per_month = self.videos_per_month
+        super().save(*args, **kwargs)
+    
     def get_posted_stats(self, month=None, year=None):
         """Get posted statistics for a specific month"""
         from datetime import date
+        from verification.models import ClientVerification
         today = timezone.now().date()
         month = month or today.month
         year = year or today.year
@@ -211,8 +233,10 @@ class Client(models.Model):
         return {
             'posters_posted': posters_posted,
             'videos_posted': videos_posted,
-            'posters_quota': self.posters_per_month,
-            'videos_quota': self.videos_per_month,
+            'poster_quota': self.posters_per_month,
+            'video_quota': self.videos_per_month,
+            'base_poster_quota': self.base_posters_per_month,
+            'base_video_quota': self.base_videos_per_month,
             'is_verified': posters_posted >= self.posters_per_month and videos_posted >= self.videos_per_month
         }
 
