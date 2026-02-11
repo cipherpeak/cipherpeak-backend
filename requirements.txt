@@ -10,3 +10,4 @@ PyJWT==2.10.1
 sqlparse==0.5.3
 python-decouple
 django-filter
+gunicorn==21.2.0
