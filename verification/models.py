@@ -53,7 +53,7 @@ class ClientVerification(models.Model):
         related_name='verified_content'
     )
     verified_date = models.DateTimeField(null=True, blank=True)
-    # verification_notes = models.TextField(blank=True, null=True)
+    verification_notes = models.TextField(blank=True, null=True)
     
     # Metadata
     created_by = models.ForeignKey(
@@ -75,12 +75,14 @@ class ClientVerification(models.Model):
         verbose_name_plural = 'Posted Contents'
     
     def __str__(self):
-        return f"{self.client.client_name} - {self.get_content_type_display()} - {self.posted_date}"
+        date_str = self.posted_date.strftime('%Y-%m-%d') if self.posted_date else "No Date"
+        return f"{self.client.client_name} - {self.get_content_type_display()} - {date_str}"
     
     def save(self, *args, **kwargs):
         # Set default title if not provided
         if not self.title:
-            self.title = f"{self.get_content_type_display()} - {self.posted_date.strftime('%Y-%m-%d')}"
+            date_str = self.posted_date.strftime('%Y-%m-%d') if self.posted_date else timezone.now().strftime('%Y-%m-%d')
+            self.title = f"{self.get_content_type_display()} - {date_str}"
         
         # Auto-set verification date if status changes to approved
         if self.status == 'approved' and not self.verified_date:
@@ -96,3 +98,33 @@ class ClientVerification(models.Model):
         if notes:
             self.verification_notes = notes
         self.save()
+
+
+class MonthlyVerification(models.Model):
+    client = models.ForeignKey(
+        'clientapp.Client',
+        on_delete=models.CASCADE,
+        related_name='monthly_verifications'
+    )
+    month = models.IntegerField()
+    year = models.IntegerField()
+    is_verified = models.BooleanField(default=False)
+    
+    verified_by = models.ForeignKey(
+        'emplyees.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='finalized_verifications'
+    )
+    verified_at = models.DateTimeField(auto_now=True)
+    notes = models.TextField(blank=True, null=True)
+    
+    class Meta:
+        unique_together = ('client', 'month', 'year')
+        ordering = ['-year', '-month']
+        verbose_name = 'Monthly Verification'
+        verbose_name_plural = 'Monthly Verifications'
+    
+    def __str__(self):
+        return f"{self.client.client_name} - {self.month}/{self.year} - {'Verified' if self.is_verified else 'Pending'}"
