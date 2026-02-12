@@ -76,6 +76,7 @@ def get_monthly_client_data(month, year):
     total_revenue = 0
     total_tax = 0
     total_discount = 0
+    total_expected_revenue = 0
     
     # Prefetch payments for this batch of clients for this month/year to avoid N+1
     # We can do this efficiently by filtering payments
@@ -91,14 +92,28 @@ def get_monthly_client_data(month, year):
 
     for client in clients:
         try:
-            # Get verified content counts for this month
-            verified_counts = ClientVerification.objects.filter(
-                client=client,
-                posted_date__month=month,
-                posted_date__year=year
-            ).values('content_type').annotate(count=Count('id'))
+            # Auto-calculate expected revenue
+            total_expected_revenue += client.monthly_retainer or 0
+
+            # Get verified content counts for this month from MonthlyVerification
+            from verification.models import MonthlyVerification
             
-            counts_dict = {item['content_type']: item['count'] for item in verified_counts}
+            # Since each client has a single ClientVerification record
+            cv = ClientVerification.objects.filter(client=client).first()
+            monthly_stat = None
+            if cv:
+                monthly_stat = MonthlyVerification.objects.filter(
+                    clientverification=cv,
+                    month=month,
+                    year=year
+                ).first()
+            
+            counts_dict = {
+                'video': monthly_stat.videos_completed if monthly_stat else 0,
+                'poster': monthly_stat.posters_completed if monthly_stat else 0,
+                'reels': 0, # Future: Add these to MonthlyVerification if needed
+                'stories': 0,
+            }
 
             # Check if there is a payment
             cp = payment_map.get(client.id)
@@ -200,6 +215,7 @@ def get_monthly_client_data(month, year):
             'total_revenue': total_revenue,
             'total_tax': total_tax,
             'total_discount': total_discount,
+            'total_expected_revenue': total_expected_revenue,
             'count': len(client_data),
             'task_count': tasks.count()
         }
@@ -231,6 +247,7 @@ def get_monthly_employee_data(month, year):
     total_incentives = 0
     total_deductions = 0
     total_net = 0
+    total_expected_salary = 0
 
     # Fetch leaves for these employees
     leave_report = get_monthly_leave_data(month, year)
@@ -247,6 +264,9 @@ def get_monthly_employee_data(month, year):
     for emp in employees:
         emp_name = emp.get_full_name() or emp.username
         
+        # Auto-calculate expected salary
+        total_expected_salary += emp.salary or 0
+
         # Calculate tasks for this SPECIFIC employee in this period
         emp_tasks = Task.objects.filter(
             assignee=emp,
@@ -351,6 +371,7 @@ def get_monthly_employee_data(month, year):
             'total_incentives': total_incentives,
             'total_deductions': total_deductions,
             'total_net_paid': total_net,
+            'total_expected_salary': total_expected_salary,
             'count': len(employee_data),
             'task_count': tasks.count(),
             'total_leave_days': leave_report['summary']['total_days']

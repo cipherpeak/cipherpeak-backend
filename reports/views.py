@@ -53,6 +53,7 @@ class MonthlyClientReportView(BaseReportView):
                 'total_revenue': summary['total_revenue'],
                 'total_tax': summary['total_tax'],
                 'total_discount': summary['total_discount'],
+                'expected_revenue': summary['total_expected_revenue'],
                 'client_count': summary['count'],
                 'generated_by': request.user
             }
@@ -88,6 +89,7 @@ class MonthlyEmployeeReportView(BaseReportView):
                 'total_deductions': summary['total_deductions'],
                 'total_net_paid': summary['total_net_paid'],
                 'total_leave_days': summary['total_leave_days'],
+                'expected_salary': summary['total_expected_salary'],
                 'employee_count': summary['count'],
                 'generated_by': request.user
             }
