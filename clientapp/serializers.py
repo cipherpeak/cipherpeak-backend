@@ -128,28 +128,11 @@ class ClientSerializer(serializers.ModelSerializer):
         utils.update_payment_status(instance)
         instance.save()
         
-        # Auto-create verification objects for videos and posters
-        # completion_date is set to None initially and will be set when verified
-        
-        # Create verification records for videos
-        if instance.videos_per_month > 0:
-            for _ in range(instance.videos_per_month):
-                ClientVerification.objects.create(
-                    client=instance,
-                    content_type='video',
-                    completion_date=None,
-                    verified_by=None
-                )
-        
-        # Create verification records for posters
-        if instance.posters_per_month > 0:
-            for _ in range(instance.posters_per_month):
-                ClientVerification.objects.create(
-                    client=instance,
-                    content_type='poster',
-                    completion_date=None,
-                    verified_by=None
-                )
+        # Create a single verification object for the client
+        ClientVerification.objects.create(
+            client=instance,
+            verified_by=None
+        )
         
         return instance
     

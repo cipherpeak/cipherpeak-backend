@@ -14,6 +14,7 @@ class MonthlyEmployeeReport(models.Model):
     total_deductions = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     total_net_paid = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     total_leave_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    expected_salary = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     employee_count = models.IntegerField(default=0)
     
     generated_at = models.DateTimeField(auto_now_add=True)
@@ -42,6 +43,7 @@ class MonthlyClientReport(models.Model):
     total_revenue = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     total_tax = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     total_discount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    expected_revenue = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     client_count = models.IntegerField(default=0)
     
     generated_at = models.DateTimeField(auto_now_add=True)

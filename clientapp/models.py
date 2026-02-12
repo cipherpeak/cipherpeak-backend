@@ -198,50 +198,12 @@ class Client(models.Model):
         return f"{self.client_name} ({self.get_client_type_display()})"
     
     def save(self, *args, **kwargs):
-        # Initialize base quotas if they are not set
-        # This catches new clients and existing clients missing baseline data
         if self.base_posters_per_month == 0 and self.posters_per_month > 0:
             self.base_posters_per_month = self.posters_per_month
         if self.base_videos_per_month == 0 and self.videos_per_month > 0:
             self.base_videos_per_month = self.videos_per_month
         super().save(*args, **kwargs)
     
-    def get_posted_stats(self, month=None, year=None):
-        """Get posted statistics for a specific month"""
-        from datetime import date
-        from verification.models import ClientVerification
-        today = timezone.now().date()
-        month = month or today.month
-        year = year or today.year
-        
-        posters_posted = ClientVerification.objects.filter(
-            client=self,
-            content_type='poster',
-            posted_date__month=month,
-            posted_date__year=year,
-            status__in=['posted', 'approved']
-        ).count()
-        
-        videos_posted = ClientVerification.objects.filter(
-            client=self,
-            content_type='video',
-            posted_date__month=month,
-            posted_date__year=year,
-            status__in=['posted', 'approved']
-        ).count()
-        
-        return {
-            'posters_posted': posters_posted,
-            'videos_posted': videos_posted,
-            'poster_quota': self.posters_per_month,
-            'video_quota': self.videos_per_month,
-            'base_poster_quota': self.base_posters_per_month,
-            'base_video_quota': self.base_videos_per_month,
-            'is_verified': posters_posted >= self.posters_per_month and videos_posted >= self.videos_per_month
-        }
-
-
-
 
 class ClientDocument(models.Model):
     DOCUMENT_TYPES = [
