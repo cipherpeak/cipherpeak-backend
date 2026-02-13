@@ -27,9 +27,11 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['cipher-peak.com', 'www.cipher-peak.com', 'localhost', '127.0.0.1']
 
-
+SECURE_SSL_REDIRECT = False
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
 # Application definition
 
 INSTALLED_APPS = [
@@ -78,10 +80,22 @@ AUTH_USER_MODEL = 'emplyees.CustomUser'
 
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",
-    "http://localhost:8081",
-    "http://localhost:3000",
+     "https://cipherpeak.vercel.app"
+   # "http://localhost:8080",
+   # "http://localhost:8081",
+   # "http://localhost:3000",
 ]
+
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://cipher-peak.com',
+    'https://www.cipher-peak.com'
+]
+
+
+
+
+
 
 CORS_ALLOW_CREDENTIALS = True   
 
