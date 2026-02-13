@@ -89,7 +89,8 @@ CORS_ALLOWED_ORIGINS = [
 
 CSRF_TRUSTED_ORIGINS = [
     'https://cipher-peak.com',
-    'https://www.cipher-peak.com'
+    'https://www.cipher-peak.com',
+    'https://cipherpeak.vercel.app'
 ]
 
 
