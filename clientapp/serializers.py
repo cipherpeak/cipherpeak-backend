@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import re
 from .models import Client, ClientDocument, ClientPayment
 from django.utils import timezone
 from datetime import date
@@ -38,7 +39,6 @@ class ClientSerializer(serializers.ModelSerializer):
             'reels_per_month',
             'stories_per_month',
             'status',
-            'onboarding_date',
             'contract_start_date',
             'contract_end_date',
             'address',
@@ -71,6 +71,18 @@ class ClientSerializer(serializers.ModelSerializer):
             'updated_at', 
             'is_active_client',
         ]
+        extra_kwargs = {
+            'industry': {'required': True},
+            'owner_name': {'required': True},
+            'contact_person_name': {'required': True},
+            'contact_email': {'required': True},
+            'contact_phone': {'required': True},
+            'monthly_retainer': {'required': True},
+            'videos_per_month': {'required': True},
+            'posters_per_month': {'required': True},
+            'reels_per_month': {'required': True},
+            'stories_per_month': {'required': True},
+        }
     
     def validate_client_name(self, value):
         
@@ -81,6 +93,13 @@ class ClientSerializer(serializers.ModelSerializer):
             
         if queryset.exists():
             raise serializers.ValidationError("A client with this name already exists.")
+        return value
+
+    def validate_contact_phone(self, value):
+        # Regex to allow spaces, dashes, parentheses, and digits. Length 10-20.
+        pattern = r'^\+?[\d\s\-\(\)]{10,20}$'
+        if not re.match(pattern, value):
+            raise serializers.ValidationError("Phone number must be valid (10-20 chars, allowing spaces, dashes, parentheses).")
         return value
 
     def get_is_active_client(self, obj):
@@ -192,7 +211,7 @@ class ClientDetailSerializer(serializers.ModelSerializer):
             'youtube_channel', 'google_my_business', 'linkedin_url',
             'twitter_handle', 'videos_per_month', 'posters_per_month',
             'reels_per_month', 'stories_per_month', 'status',
-            'onboarding_date', 'monthly_retainer', 
+            'monthly_retainer', 
             'payment_date', 'next_payment_date', 'current_month_payment_status',
             'last_payment_date', 'payment_status_display',
             'email', 'phone', 'company', 'client_type_display',
@@ -209,13 +228,13 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         import calendar
         from datetime import date
         
-        if not obj.onboarding_date:
+        if not obj.created_at:
             return "Unknown"
         
         today = timezone.now().date()
         
         # Find the first unpaid month since onboarding
-        current_date_iter = date(obj.onboarding_date.year, obj.onboarding_date.month, 1)
+        current_date_iter = date(obj.created_at.year, obj.created_at.month, 1)
         end_date = date(today.year, today.month, 1)
         
         target_month = None
@@ -259,7 +278,7 @@ class ClientDetailSerializer(serializers.ModelSerializer):
                     return "Early Payment Received"
                 return "Payment Received"
             
-            if not has_payments and obj.onboarding_date > today:
+            if not has_payments and obj.created_at.date() > today:
                 return "Upcoming"
                 
             if not has_payments:
@@ -323,7 +342,6 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
             'reels_per_month',
             'stories_per_month',
             'status',
-            'onboarding_date',
             'contract_start_date',
             'contract_end_date',
             'address',

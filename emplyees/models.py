@@ -244,9 +244,7 @@ class SalaryPayment(models.Model):
         return f"{self.employee.username} - {self.month}/{self.year} ({self.status})"
 
     def save(self, *args, **kwargs):
-        
-        if self.net_amount is None or not self.pk:
-            self.net_amount = self.base_salary + self.incentives - self.deductions
+        self.net_amount = self.base_salary + self.incentives - self.deductions
         super().save(*args, **kwargs)
 
 

@@ -17,12 +17,22 @@ class EventCreateSerializer(serializers.ModelSerializer):
             'event_date',
             'event_type',
             'assigned_employee',
+            'is_for_all_employees',
             'location',
             'status',
             'duration_minutes',
             'is_recurring',
             'recurrence_pattern'
         ]
+        
+    def validate(self, data):
+        is_for_all = data.get('is_for_all_employees', False)
+        assigned_emp = data.get('assigned_employee')
+        
+        if not is_for_all and not assigned_emp:
+            raise serializers.ValidationError({"assigned_employee": "This field is required unless the event is for all employees."})
+            
+        return data
         
     
 
@@ -63,6 +73,7 @@ class EventListSerializer(serializers.ModelSerializer):
             'duration_minutes',
             'is_recurring',
             'recurrence_pattern',
+            'is_for_all_employees',
             'is_past_event',
             'is_upcoming',
         ]
@@ -104,6 +115,7 @@ class EventDetailSerializer(serializers.ModelSerializer):
             'is_past_event',
             'is_upcoming',
             'time_until_event',
+            'is_for_all_employees',
             'event_duration_display'
         ]
         read_only_fields = ['created_by', 'created_at', 'updated_at']
@@ -121,6 +133,7 @@ class EventUpdateSerializer(serializers.ModelSerializer):
             'event_date',
             'event_type',
             'assigned_employee',
+            'is_for_all_employees',
             'location',
             'status',
             'duration_minutes',

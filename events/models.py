@@ -50,11 +50,18 @@ class Event(models.Model):
         help_text="Type of the event"
     )
     
+    is_for_all_employees = models.BooleanField(
+        default=False,
+        help_text="If true, this event is visible to all employees"
+    )
+
     assigned_employee = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='assigned_events',
-        help_text="Employee assigned to this event"
+        help_text="Employee assigned to this event",
+        null=True,
+        blank=True
     )
     
     location = models.CharField(

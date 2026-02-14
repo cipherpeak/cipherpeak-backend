@@ -49,7 +49,10 @@ class EventListView(APIView):
         
         user = request.user
         if not user.is_superuser and user.role not in ['superuser', 'admin', 'director', 'managing_director']:
-            queryset = queryset.filter(assigned_employee=user)
+            queryset = queryset.filter(
+                models.Q(assigned_employee=user) | 
+                models.Q(is_for_all_employees=True)
+            )
 
         search_query = request.query_params.get('search', None)
         if search_query:
@@ -124,7 +127,7 @@ class EventDetailView(APIView):
             event = Event.objects.get(id=id, is_deleted=False)
             user = self.request.user
             if not user.is_superuser and user.role not in ['superuser', 'admin', 'director', 'managing_director']:
-                if event.assigned_employee != user:
+                if event.assigned_employee != user and not event.is_for_all_employees:
                     return None
             
             return event

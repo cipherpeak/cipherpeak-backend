@@ -1,5 +1,5 @@
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.utils import timezone
 from datetime import date, timedelta
 import calendar
@@ -63,13 +63,17 @@ class Client(models.Model):
     # Basic Client Information
     client_name = models.CharField(max_length=255, unique=True)
     client_type = models.CharField(max_length=20, choices=CLIENT_TYPE_CHOICES, default='company')
-    industry = models.CharField(max_length=50, choices=INDUSTRY_CHOICES, blank=True, null=True)
+    industry = models.CharField(max_length=50, choices=INDUSTRY_CHOICES, default='other')
     
     # Client Owner/Contact Information
-    owner_name = models.CharField(max_length=255, blank=True, null=True)
-    contact_person_name = models.CharField(max_length=255, blank=True, null=True)
-    contact_email = models.EmailField(blank=True, null=True)
-    contact_phone = models.CharField(max_length=15, blank=True, null=True)
+    owner_name = models.CharField(max_length=255, default='Unknown')
+    contact_person_name = models.CharField(max_length=255, default='Unknown')
+    contact_email = models.EmailField(default='legacy@example.com')
+    contact_phone = models.CharField(
+        max_length=20,
+        default='+0000000000',
+        validators=[RegexValidator(regex=r'^\+?[\d\s\-\(\)]{10,20}$', message="Phone number must be valid (10-20 chars, allowing spaces, dashes, parentheses).")]
+    )
     
     # Social Media Handles
     instagram_id = models.CharField(max_length=255, blank=True, null=True, verbose_name="Instagram ID/Handle")
@@ -113,12 +117,11 @@ class Client(models.Model):
         verbose_name="Number of Stories per Month"
     )
     
-    # Client Status & Timeline
+    # Client Status & Timelinezzz
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='prospect')
-    onboarding_date = models.DateField(default=timezone.now)
     contract_start_date = models.DateField(blank=True, null=True)
     contract_end_date = models.DateField(blank=True, null=True)
-    
+      
     # Payment Information
     payment_cycle = models.CharField(
         max_length=20, 
@@ -152,8 +155,7 @@ class Client(models.Model):
     monthly_retainer = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 
-        blank=True, 
-        null=True,
+        default=0,
         validators=[MinValueValidator(0)],
         verbose_name="Monthly Retainer Fee"
     ) 

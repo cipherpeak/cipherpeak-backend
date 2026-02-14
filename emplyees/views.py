@@ -647,6 +647,51 @@ class PaymentDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+    def put(self, request, id):
+        return self.update(request, id, partial=False)
+
+    def patch(self, request, id):
+        return self.update(request, id, partial=True)
+
+    def update(self, request, id, partial=False):
+        if not request.user.is_superuser and request.user.role not in ['admin', 'hr', 'manager', 'director']:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            payment = SalaryPayment.objects.get(id=id)
+        except SalaryPayment.DoesNotExist:
+            return Response({"error": "Payment not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = SalaryPaymentSerializer(payment, data=request.data, partial=partial)
+        if serializer.is_valid():
+            payment = serializer.save()
+            
+            # Sync with Finance
+            try:
+                from finance.utils import record_system_expense
+                import calendar
+                employee = payment.employee
+                record_system_expense(
+                    expense_type='employee_salaries',
+                    amount=payment.net_amount,
+                    date=timezone.now().date(),
+                    category_name='Employee Salaries',
+                    vendor_name=employee.get_full_name() or employee.username,
+                    remarks=f"Updated Salary Payment for {employee.get_full_name() or employee.username} - {calendar.month_name[payment.month]} {payment.year}. {payment.remarks}",
+                    reference_number=f"SAL-{payment.id}",
+                    payment_method=payment.payment_method or 'bank_transfer',
+                    created_by=request.user
+                )
+            except Exception as e:
+                print(f"Error updating finance expense: {str(e)}")
+
+            return Response({
+                'message': 'Salary payment updated successfully',
+                'payment': SalaryPaymentSerializer(payment).data
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 #camera department list view
